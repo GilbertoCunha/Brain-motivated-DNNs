@@ -18,8 +18,8 @@ class RetinaVVSNet(pl.LightningModule):
         
         # Model Parameters
         self.batch_size = batch_size
-        self.name = f"RetChannels:{ret_channels}|VVSLayers:{vvs_layers}|Dropout:{dropout}"
-        self.name += f"BatchSize:{batch_size}"
+        self.name = f"RetChannels-{ret_channels}_VVSLayers-{vvs_layers}_Dropout-{dropout}_"
+        self.name += f"BatchSize-{batch_size}"
 
         # Define Retina Net
         self.ret_conv1 = nn.Conv2d(in_channels=input_shape[0], out_channels=32, kernel_size=9)
@@ -32,7 +32,7 @@ class RetinaVVSNet(pl.LightningModule):
         self.vvs_bn = nn.ModuleList()
         self.vvs_conv.append(nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9))
         self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        for _ in range(vvs_layers):
+        for _ in range(vvs_layers - 1):
             self.vvs_conv.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=9))
             self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
         self.vvs_fc = nn.Linear(in_features=input_shape[1]*input_shape[2]*32, out_features=1024)
@@ -45,9 +45,6 @@ class RetinaVVSNet(pl.LightningModule):
     def __repr__(self):
         return self.name
 
-    def to_one_hot(self, labels, num_classes=10):
-        return torch.zeros(len(labels), num_classes).scatter_(1, labels.unsqueeze(1), 1.)
-
     def forward(self, t):
         # Retina forward pass
         t = self.pad(self.ret_bn1(F.relu(self.ret_conv1(t))))
@@ -57,7 +54,7 @@ class RetinaVVSNet(pl.LightningModule):
         for Conv2d, BatchNorm2d in zip(self.vvs_conv, self.vvs_bn):
             t = self.pad(BatchNorm2d(F.relu(Conv2d(t))))
         t = self.dropout(F.relu(self.vvs_fc(t.view(-1, 32*32*32))))
-        t = F.softmax(self.vvs_out(t), dim=-1)
+        t = self.vvs_out(t)
         
         return t
 
@@ -106,16 +103,14 @@ class RetinaVVSNet(pl.LightningModule):
         predictions = self.forward(images)
 
         # Get batch metrics
-        loss = self.cross_entropy_loss(predictions, labels)
         accuracy = accuracy_score(
             labels.cpu().detach().numpy(),
             predictions.argmax(dim=-1).cpu().detach().numpy()
         )
+        loss = self.cross_entropy_loss(predictions, labels)
 
-        end = time.time()
-
-        r = {"labels": labels, "predictions": predictions,
-             "loss": loss, "acc": accuracy, "time": end-start}
+        r = {"labels": labels, "predictions": F.softmax(predictions, dim=-1),
+             "loss": loss, "acc": accuracy, "time": time.time()-start}
 
         return r
 
@@ -143,17 +138,16 @@ class RetinaVVSNet(pl.LightningModule):
         images, labels = batch
         predictions = self.forward(images)
 
-        # Get batch metrics
-        loss = self.cross_entropy_loss(predictions, labels)
         accuracy = accuracy_score(
             labels.cpu(),
             predictions.argmax(dim=-1).cpu()
         )
 
-        end = time.time()
+        # Get batch metrics
+        loss = self.cross_entropy_loss(predictions, labels)
 
-        r = {"labels": labels, "predictions": predictions,
-             "val_loss": loss, "val_acc": accuracy, "time": end-start}
+        r = {"labels": labels, "predictions": F.softmax(predictions, dim=-1),
+             "val_loss": loss, "val_acc": accuracy, "time": time.time()-start}
 
         return r
 
