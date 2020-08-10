@@ -4,6 +4,7 @@ from torchvision.datasets import CIFAR10
 from torch.utils.data import DataLoader
 from argparse import ArgumentParser
 from torchvision import transforms
+from pytorch_sift import SIFTNet
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torch.nn as nn
@@ -12,69 +13,79 @@ import torch
 import time
 
 
-class RetinaVVSNet(pl.LightningModule):
+class SIFT(nn.Module):
     """
-    This is the network class
-    This network is a combination of two networks with different purposes:
-        - The Retina Net: Captures and encodes visual data
-        - The VVS Net: Processes the visual data
-
-    Retina Net:
-        - 2 convolutional layers
-        - 2 regulatory batch normalization layers
-        - Variable number of output channels to simulate amount of information
-        bottleneck to be passed to the VVS Net
-
-    VVS Net:
-        - Variable number of convolutional layers to simulate different visual
-        cortex complexities
-        - Regulatory Batch Normalization at each convolutional layer
-        - Fully connected layers to predict image classes
+    A SIFT class that automatically processes one batch of images, built using ducha-aiki's sift
+    implementation
     """
 
-    def __init__(self, batch_size, input_shape, ret_channels, vvs_layers, dropout):
-        super(RetinaVVSNet, self).__init__()
-        
+    def __init__(self, patch_size=65, num_ang_bins=8, num_spatial_bins=4, clip_val=0.2, root_sift=False,
+                 mask_type='CircularGauss', sigma_type='hesamp'):
+        super(SIFT, self).__init__()
+        self.ps = patch_size
+        self.sift_per_patches = SIFTNet(patch_size, num_ang_bins, num_spatial_bins, clip_val, root_sift,
+                                        mask_type, sigma_type)
+
+    def forward(self, image_batch):
+        bs = image_batch.shape[0]  # Batch size
+        c = image_batch.shape[1]  # Number of image channels
+        ps = self.ps  # Patch size
+
+        # Get image patches
+        patches = image_batch.unfold(2, ps, ps).unfold(3, ps, ps).reshape(bs, -1, c, ps, ps)
+        patches_per_channel = torch.split(patches, 1, dim=2)
+        sift_per_channel = []
+        for patch in patches_per_channel:
+            sift_per_channel.append(torch.stack([self.sift_per_patches(image) for image in patch]))
+
+        return torch.stack(sift_per_channel).permute(1, 0, 2, 3)
+
+
+class SIFTRetinaVVS(pl.LightningModule):
+
+    def __init__(self, batch_size, input_shape, ret_channels, vvs_layers, patch_size, dropout):
+        super(SIFTRetinaVVS, self).__init__()
+
         # Model Parameters
         self.batch_size = batch_size
-        self.name = f"RetChannels-{ret_channels}_VVSLayers-{vvs_layers}_Dropout-{int(dropout*100)}_"
-        self.name += f"BatchSize-{batch_size}"
+        self.name = f"RetChannels-{ret_channels}_VVSLayers-{vvs_layers}_PatchSize-{patch_size}_"
+        self.name += f"Dropout-{int(dropout * 100)}_BatchSize-{batch_size}"
 
-        # Define Retina Net
-        self.ret_conv1 = nn.Conv2d(in_channels=input_shape[0], out_channels=32, kernel_size=9)
+        # Retina Net
+        self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
         self.ret_bn1 = nn.BatchNorm2d(num_features=32)
-        self.ret_out = nn.Conv2d(in_channels=32, out_channels=ret_channels, kernel_size=9)
+        self.ret_conv = nn.Conv2d(in_channels=32, out_channels=ret_channels, kernel_size=9)
         self.ret_bn2 = nn.BatchNorm2d(num_features=ret_channels)
 
-        # Define VVS_Net
+        # VVS_Net
         self.vvs_conv = nn.ModuleList()
         self.vvs_bn = nn.ModuleList()
         self.vvs_conv.append(nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9))
         self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        for _ in range(vvs_layers - 1):
+        for _ in range(vvs_layers-1):
             self.vvs_conv.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=9))
             self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        self.vvs_fc = nn.Linear(in_features=input_shape[1]*input_shape[2]*32, out_features=1024)
-        self.vvs_out = nn.Linear(in_features=1024, out_features=10)
+        self.sift = SIFT(patch_size=patch_size, sigma_type="hesamp", mask_type='CircularGauss')
+        in_features = 32 * input_shape[0] * int(input_shape[1]/patch_size)**2 * 128  # Number of SIFT outputs
+        self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
+        self.outputs = nn.Linear(in_features=1024, out_features=10)
 
-        # Padding and Dropout layers
+        # Define Dropout and Padding Layers
         self.pad = nn.ZeroPad2d(4)
         self.dropout = nn.Dropout(dropout)
 
-    def __repr__(self):
-        return self.name
-
     def forward(self, t):
         # Retina forward pass
-        t = self.pad(self.ret_bn1(F.relu(self.ret_conv1(t))))
-        t = self.pad(self.ret_bn2(F.relu(self.ret_out(t))))
+        t = self.pad(self.ret_bn1(F.relu(self.inputs(t))))
+        t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
 
         # VVS forward pass
-        for Conv2d, BatchNorm2d in zip(self.vvs_conv, self.vvs_bn):
-            t = self.pad(BatchNorm2d(F.relu(Conv2d(t))))
-        t = self.dropout(F.relu(self.vvs_fc(t.view(-1, 32*32*32))))
-        t = self.vvs_out(t)
-        
+        for conv, bn in zip(self.vvs_conv, self.vvs_bn):
+            t = self.pad(bn(F.relu(conv(t))))
+        t = self.sift(t).reshape(self.batch_size, -1)
+        t = self.dropout(F.relu(self.vvs_fc(t)))
+        t = self.outputs(t)
+
         return t
 
     def prepare_data(self):
@@ -91,7 +102,7 @@ class RetinaVVSNet(pl.LightningModule):
         # Split data and create training DataLoader
         train_data = CIFAR10("data/CIFAR10", train=True,
                              download=False, transform=transform)
-        train_data = DataLoader(train_data, batch_size=self.batch_size, 
+        train_data = DataLoader(train_data, batch_size=self.batch_size,
                                 shuffle=True, num_workers=12)
 
         return train_data
@@ -105,7 +116,7 @@ class RetinaVVSNet(pl.LightningModule):
         val_data = CIFAR10("data/CIFAR10", train=False,
                            download=False, transform=transform)
         val_data = DataLoader(val_data, batch_size=self.batch_size, num_workers=12)
-        
+
         return val_data
 
     def configure_optimizers(self):
@@ -136,7 +147,7 @@ class RetinaVVSNet(pl.LightningModule):
             "predictions": F.softmax(predictions, dim=-1),
             "loss": loss,
             "acc": accuracy,
-            "time": time.time()-start
+            "time": time.time() - start
         }
 
         return output
@@ -170,29 +181,7 @@ class RetinaVVSNet(pl.LightningModule):
         return results
 
     def validation_step(self, batch, batch_id):
-        start = time.time()
-
-        # Get predictions
-        images, labels = batch
-        predictions = self(images)
-
-        # Get validation metrics
-        accuracy = accuracy_score(
-            labels.cpu(),
-            predictions.argmax(dim=-1).cpu()
-        )
-        loss = self.cross_entropy_loss(predictions, labels)
-
-        # Get validation step output
-        output = {
-            "labels": labels,
-            "predictions": F.softmax(predictions, dim=-1),
-            "val_loss": loss,
-            "val_acc": accuracy,
-            "time": time.time()-start
-        }
-
-        return output
+        return self.training_step(batch, batch_id)
 
     def validation_epoch_end(self, outputs):
         # Get ROC_AUC
@@ -201,8 +190,8 @@ class RetinaVVSNet(pl.LightningModule):
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
         # Get epoch average metrics
-        avg_loss = torch.stack([batch["val_loss"] for batch in outputs]).mean()
-        avg_acc = np.stack([batch["val_acc"] for batch in outputs]).mean()
+        avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
+        avg_acc = np.stack([batch["acc"] for batch in outputs]).mean()
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
 
         # Progress bar log
@@ -239,14 +228,15 @@ if __name__ == "__main__":
     parser.add_argument("--input_shape", default=(1, 32, 32))
     parser.add_argument("--ret_channels", default=32)
     parser.add_argument("--vvs_layers", default=4)
+    parser.add_argument("--patch_size", default=16)
     parser.add_argument("--dropout", default=0.4, type=float)
     parser.add_argument("--ES_patience", default=5)
     parser.add_argument("--save_top_k", default=1)
     args = parser.parse_args()
 
     # Create model
-    model = RetinaVVSNet(args.batch_size, args.input_shape, args.ret_channels,
-                         args.vvs_layers, args.dropout)
+    model = SIFTRetinaVVS(args.batch_size, args.input_shape, args.ret_channels,
+                          args.vvs_layers, args.patch_size, args.dropout)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -255,16 +245,18 @@ if __name__ == "__main__":
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath="models/RetinaVVS/",
+        filepath="models/SIFT/",
         prefix=model.name,
         monitor="val_loss",
         mode="min",
         save_top_k=args.save_top_k
     )
-    tb_logger = pl_loggers.TensorBoardLogger("logs/RetinaVVS/", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger("logs/SIFT/", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, gpus=1, early_stop_callback=early_stop,
                                             checkpoint_callback=model_checkpoint, max_epochs=100,
-                                            fast_dev_run=False, logger=tb_logger)
+                                            fast_dev_run=True, logger=tb_logger)
     trainer.fit(model)
+
+
