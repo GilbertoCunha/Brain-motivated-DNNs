@@ -12,13 +12,31 @@ import time
 
 
 class RetinaVVSNet(pl.LightningModule):
+    """
+    This is the network class
+    This network is a combination of two networks with different purposes:
+        - The Retina Net: Captures and encodes visual data
+        - The VVS Net: Processes the visual data
+
+    Retina Net:
+        - 2 convolutional layers
+        - 2 regulatory batch normalization layers
+        - Variable number of output channels to simulate amount of information
+        bottleneck to be passed to the VVS Net
+
+    VVS Net:
+        - Variable number of convolutional layers to simulate different visual
+        cortex complexities
+        - Regulatory Batch Normalization at each convolutional layer
+        - Fully connected layers to predict image classes
+    """
 
     def __init__(self, batch_size, input_shape, ret_channels, vvs_layers, dropout):
         super(RetinaVVSNet, self).__init__()
         
         # Model Parameters
         self.batch_size = batch_size
-        self.name = f"RetChannels-{ret_channels}_VVSLayers-{vvs_layers}_Dropout-{dropout}_"
+        self.name = f"RetChannels-{ret_channels}_VVSLayers-{vvs_layers}_Dropout-{int(dropout*100)}_"
         self.name += f"BatchSize-{batch_size}"
 
         # Define Retina Net
@@ -102,7 +120,7 @@ class RetinaVVSNet(pl.LightningModule):
 
         # Get predictions
         images, labels = batch
-        predictions = self.forward(images)
+        predictions = self(images)
 
         # Get batch metrics
         accuracy = accuracy_score(
@@ -155,14 +173,13 @@ class RetinaVVSNet(pl.LightningModule):
 
         # Get predictions
         images, labels = batch
-        predictions = self.forward(images)
+        predictions = self(images)
 
+        # Get validation metrics
         accuracy = accuracy_score(
             labels.cpu(),
             predictions.argmax(dim=-1).cpu()
         )
-
-        # Get batch metrics
         loss = self.cross_entropy_loss(predictions, labels)
 
         # Get validation step output
