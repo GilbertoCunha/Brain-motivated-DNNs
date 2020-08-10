@@ -72,7 +72,8 @@ class RetinaVVSNet(pl.LightningModule):
         # Split data and create training DataLoader
         train_data = CIFAR10("data/CIFAR10", train=True,
                              download=False, transform=transform)
-        train_data = DataLoader(train_data, batch_size=self.batch_size, shuffle=True)
+        train_data = DataLoader(train_data, batch_size=self.batch_size, 
+                                shuffle=True, num_workers=12)
 
         return train_data
 
@@ -84,7 +85,7 @@ class RetinaVVSNet(pl.LightningModule):
         ])
         val_data = CIFAR10("data/CIFAR10", train=False,
                            download=False, transform=transform)
-        val_data = DataLoader(val_data, batch_size=self.batch_size)
+        val_data = DataLoader(val_data, batch_size=self.batch_size, num_workers=12)
         
         return val_data
 
@@ -92,7 +93,8 @@ class RetinaVVSNet(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters())
         return optimizer
 
-    def cross_entropy_loss(self, predictions, labels):
+    @staticmethod
+    def cross_entropy_loss(predictions, labels):
         return F.cross_entropy(predictions, labels)
 
     def training_step(self, batch, batch_id):
@@ -109,10 +111,16 @@ class RetinaVVSNet(pl.LightningModule):
         )
         loss = self.cross_entropy_loss(predictions, labels)
 
-        r = {"labels": labels, "predictions": F.softmax(predictions, dim=-1),
-             "loss": loss, "acc": accuracy, "time": time.time()-start}
+        # Get train batch output
+        output = {
+            "labels": labels,
+            "predictions": F.softmax(predictions, dim=-1),
+            "loss": loss,
+            "acc": accuracy,
+            "time": time.time()-start
+        }
 
-        return r
+        return output
 
     def training_epoch_end(self, outputs):
         # Get epoch average metrics
@@ -126,10 +134,21 @@ class RetinaVVSNet(pl.LightningModule):
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
         # Tensorboard log
-        tensorboard_logs = {"train_loss": avg_loss, "train_acc": avg_acc,
-                            "train_auc": auc, "epoch_duration": total_time}
+        tensorboard_logs = {
+            "train_loss": avg_loss,
+            "train_acc": avg_acc,
+            "train_auc": auc,
+            "epoch_duration": total_time,
+            "step": self.current_epoch
+        }
 
-        return {"avg_train_loss": avg_loss, "log": tensorboard_logs}
+        # Get returns
+        results = {
+            "train_loss": avg_loss,
+            "log": tensorboard_logs
+        }
+
+        return results
 
     def validation_step(self, batch, batch_id):
         start = time.time()
@@ -146,27 +165,52 @@ class RetinaVVSNet(pl.LightningModule):
         # Get batch metrics
         loss = self.cross_entropy_loss(predictions, labels)
 
-        r = {"labels": labels, "predictions": F.softmax(predictions, dim=-1),
-             "val_loss": loss, "val_acc": accuracy, "time": time.time()-start}
+        # Get validation step output
+        output = {
+            "labels": labels,
+            "predictions": F.softmax(predictions, dim=-1),
+            "val_loss": loss,
+            "val_acc": accuracy,
+            "time": time.time()-start
+        }
 
-        return r
+        return output
 
     def validation_epoch_end(self, outputs):
-        # Get epoch average metrics
-        avg_loss = torch.stack([batch["val_loss"] for batch in outputs]).mean()
-        avg_acc = np.stack([batch["val_acc"] for batch in outputs]).mean()
-        total_time = np.stack([batch["time"] for batch in outputs]).sum()
-
         # Get ROC_AUC
         labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
         predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
-        # Tensorboard log
-        tensorboard_logs = {"val_loss": avg_loss, "val_acc": avg_acc,
-                            "val_auc": auc, "epoch_duration": total_time}
+        # Get epoch average metrics
+        avg_loss = torch.stack([batch["val_loss"] for batch in outputs]).mean()
+        avg_acc = np.stack([batch["val_acc"] for batch in outputs]).mean()
+        total_time = np.stack([batch["time"] for batch in outputs]).sum()
 
-        return {"avg_val_loss": avg_loss, "log": tensorboard_logs}
+        # Progress bar log
+        progress_bar = {
+            "val_loss": avg_loss,
+            "val_acc": avg_acc,
+            "val_auc": auc
+        }
+
+        # Tensorboard log
+        tensorboard_logs = {
+            "val_loss": avg_loss,
+            "val_acc": avg_acc,
+            "val_auc": auc,
+            "epoch_duration": total_time,
+            "step": self.current_epoch
+        }
+
+        # Define return
+        results = {
+            "val_loss": avg_loss,
+            "log": tensorboard_logs,
+            "progress_bar": progress_bar
+        }
+
+        return results
 
 
 if __name__ == "__main__":
