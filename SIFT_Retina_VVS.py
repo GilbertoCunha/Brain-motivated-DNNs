@@ -1,10 +1,10 @@
 from sklearn.metrics import accuracy_score, roc_auc_score
 from pytorch_lightning import loggers as pl_loggers
+from kornia.feature.siftdesc import SIFTDescriptor
 from torchvision.datasets import CIFAR10
 from torch.utils.data import DataLoader
 from argparse import ArgumentParser
 from torchvision import transforms
-from pytorch_sift import SIFTNet
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torch.nn as nn
@@ -15,30 +15,25 @@ import time
 
 class SIFT(nn.Module):
     """
-    A SIFT class that automatically processes one batch of images, built using ducha-aiki's sift
-    implementation
+    A SIFT class that automatically processes one batch of images using kornia's sift descriptor
     """
 
-    def __init__(self, patch_size=65, num_ang_bins=8, num_spatial_bins=4, clip_val=0.2, root_sift=False,
-                 mask_type='CircularGauss', sigma_type='hesamp'):
+    def __init__(self, patch_size=65, num_ang_bins=8, num_spatial_bins=4, clip_val=0.2, root_sift=False):
         super(SIFT, self).__init__()
         self.ps = patch_size
-        self.sift_per_patches = SIFTNet(patch_size, num_ang_bins, num_spatial_bins, clip_val, root_sift,
-                                        mask_type, sigma_type)
+        self.sift = SIFTDescriptor(patch_size, num_ang_bins, num_spatial_bins, root_sift, clip_val)
 
     def forward(self, image_batch):
         bs = image_batch.shape[0]  # Batch size
         c = image_batch.shape[1]  # Number of image channels
         ps = self.ps  # Patch size
 
-        # Get image patches
-        patches = image_batch.unfold(2, ps, ps).unfold(3, ps, ps).reshape(bs, -1, c, ps, ps)
-        patches_per_channel = torch.split(patches, 1, dim=2)
-        sift_per_channel = []
-        for patch in patches_per_channel:
-            sift_per_channel.append(torch.stack([self.sift_per_patches(image) for image in patch]))
+        # Get SIFT outputs
+        patches = image_batch.unfold(2, ps, ps).unfold(3, ps, ps).reshape(-1, c, ps, ps)
+        p_c = torch.split(patches, 1, dim=1)
+        outputs = torch.stack([self.sift(image) for image in p_c]).permute(1, 0, 2)
 
-        return torch.stack(sift_per_channel).permute(1, 0, 2, 3)
+        return outputs
 
 
 class SIFTRetinaVVS(pl.LightningModule):
@@ -65,7 +60,7 @@ class SIFTRetinaVVS(pl.LightningModule):
         for _ in range(vvs_layers-1):
             self.vvs_conv.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=9))
             self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        self.sift = SIFT(patch_size=patch_size, sigma_type="hesamp", mask_type='CircularGauss')
+        self.sift = SIFT(patch_size=patch_size)
         in_features = 32 * input_shape[0] * int(input_shape[1]/patch_size)**2 * 128  # Number of SIFT outputs
         self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
         self.outputs = nn.Linear(in_features=1024, out_features=10)
@@ -75,6 +70,8 @@ class SIFTRetinaVVS(pl.LightningModule):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, t):
+        batch_size = t.shape[0]
+
         # Retina forward pass
         t = self.pad(self.ret_bn1(F.relu(self.inputs(t))))
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
@@ -82,7 +79,7 @@ class SIFTRetinaVVS(pl.LightningModule):
         # VVS forward pass
         for conv, bn in zip(self.vvs_conv, self.vvs_bn):
             t = self.pad(bn(F.relu(conv(t))))
-        t = self.sift(t).reshape(self.batch_size, -1)
+        t = self.sift(t).reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
 
@@ -230,7 +227,7 @@ if __name__ == "__main__":
     parser.add_argument("--vvs_layers", default=4)
     parser.add_argument("--patch_size", default=16)
     parser.add_argument("--dropout", default=0.4, type=float)
-    parser.add_argument("--ES_patience", default=5)
+    parser.add_argument("--ES_patience", default=10)
     parser.add_argument("--save_top_k", default=1)
     args = parser.parse_args()
 
@@ -256,7 +253,5 @@ if __name__ == "__main__":
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, gpus=1, early_stop_callback=early_stop,
                                             checkpoint_callback=model_checkpoint, max_epochs=100,
-                                            fast_dev_run=True, logger=tb_logger)
+                                            fast_dev_run=False, logger=tb_logger)
     trainer.fit(model)
-
-

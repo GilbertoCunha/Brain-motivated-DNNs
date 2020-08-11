@@ -38,7 +38,7 @@ class RetinaVVSNet(pl.LightningModule):
         # Model Parameters
         self.batch_size = batch_size
         self.name = f"RetChannels-{ret_channels}_VVSLayers-{vvs_layers}_Dropout-{int(dropout*100)}_"
-        self.name += f"BatchSize-{batch_size}"
+        self.name += f"BatchSize-{batch_size}_Optim:RMSprop"
 
         # Define Retina Net
         self.ret_conv1 = nn.Conv2d(in_channels=input_shape[0], out_channels=32, kernel_size=9)
@@ -109,7 +109,7 @@ class RetinaVVSNet(pl.LightningModule):
         return val_data
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters())
+        optimizer = torch.optim.RMSprop(self.parameters())
         return optimizer
 
     @staticmethod
@@ -240,7 +240,7 @@ if __name__ == "__main__":
     parser.add_argument("--ret_channels", default=32)
     parser.add_argument("--vvs_layers", default=4)
     parser.add_argument("--dropout", default=0.4, type=float)
-    parser.add_argument("--ES_patience", default=5)
+    parser.add_argument("--ES_patience", default=8)
     parser.add_argument("--save_top_k", default=1)
     args = parser.parse_args()
 
@@ -250,15 +250,15 @@ if __name__ == "__main__":
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
-        monitor="val_loss",
+        monitor="val_acc",
         patience=args.ES_patience,
-        mode="min"
+        mode="max"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
         filepath="models/RetinaVVS/",
         prefix=model.name,
-        monitor="val_loss",
-        mode="min",
+        monitor="val_acc",
+        mode="max",
         save_top_k=args.save_top_k
     )
     tb_logger = pl_loggers.TensorBoardLogger("logs/RetinaVVS/", name=model.name)
