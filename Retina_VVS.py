@@ -1,13 +1,16 @@
 from sklearn.metrics import accuracy_score, roc_auc_score
+from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
 from torchvision.datasets import CIFAR10
-from torch.utils.data import DataLoader
 from argparse import ArgumentParser
 from torchvision import transforms
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torch.nn as nn
+from tqdm import tqdm
+import pandas as pd
 import numpy as np
+import optuna
 import torch
 import time
 
@@ -76,37 +79,6 @@ class RetinaVVSNet(pl.LightningModule):
         t = self.vvs_out(t)
         
         return t
-
-    def prepare_data(self):
-        CIFAR10("data/CIFAR10", train=True, download=True)
-        CIFAR10("data/CIFAR10", train=False, download=True)
-
-    def train_dataloader(self):
-        # Select transformations for the data
-        transform = transforms.Compose([
-            transforms.Grayscale(num_output_channels=1),
-            transforms.ToTensor()
-        ])
-
-        # Split data and create training DataLoader
-        train_data = CIFAR10("data/CIFAR10", train=True,
-                             download=False, transform=transform)
-        train_data = DataLoader(train_data, batch_size=self.batch_size, 
-                                shuffle=True, num_workers=12)
-
-        return train_data
-
-    def val_dataloader(self):
-        # Select transformations for the data
-        transform = transforms.Compose([
-            transforms.Grayscale(num_output_channels=1),
-            transforms.ToTensor()
-        ])
-        val_data = CIFAR10("data/CIFAR10", train=False,
-                           download=False, transform=transform)
-        val_data = DataLoader(val_data, batch_size=self.batch_size, num_workers=12)
-        
-        return val_data
 
     def configure_optimizers(self):
         optimizer = torch.optim.RMSprop(self.parameters())
@@ -231,40 +203,70 @@ class RetinaVVSNet(pl.LightningModule):
         return results
 
 
-if __name__ == "__main__":
-    # Terminal Arguments
-    parser = ArgumentParser()
-    parser = pl.Trainer.add_argparse_args(parser)
-    parser.add_argument("--batch_size", default=64)
-    parser.add_argument("--input_shape", default=(1, 32, 32))
-    parser.add_argument("--ret_channels", default=32)
-    parser.add_argument("--vvs_layers", default=4)
-    parser.add_argument("--dropout", default=0.4, type=float)
-    parser.add_argument("--ES_patience", default=8)
-    parser.add_argument("--save_top_k", default=1)
-    args = parser.parse_args()
+def objective(trial):
+    # Optuna trial parameters
+    batch_size = trial.suggest_categorical("batch_size", [32, 64, 128, 256])
+    ret_channels = trial.suggest_categorical("ret_channels", [4, 8, 16, 32])
+    vvs_layers = trial.suggest_int("vvs_layers", 1, 4)
+    dropout = trial.suggest_discrete_uniform("dropout", 0.05, 0.5, 0.01)
+
+    # Gather the data
+    transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1),
+        transforms.ToTensor()
+    ])
+    train_data = CIFAR10("data/CIFAR10", train=True, download=False, transform=transform)
+    val_size = int(0.2 * len(train_data))
+    train_size = len(train_data) - val_size
+    train_data, val_data = random_split(train_data, [train_size, val_size],
+                                        generator=torch.Generator().manual_seed(trial.number))
+    train_data = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=12)
+    val_data = DataLoader(val_data, batch_size=batch_size, num_workers=12)
 
     # Create model
-    model = RetinaVVSNet(args.batch_size, args.input_shape, args.ret_channels,
-                         args.vvs_layers, args.dropout)
+    model = RetinaVVSNet(batch_size, (1, 32, 32), ret_channels,
+                         vvs_layers, dropout)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
         monitor="val_acc",
-        patience=args.ES_patience,
+        patience=5,
         mode="max"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
         filepath="models/RetinaVVS/",
-        prefix=model.name,
+        prefix=f"trial_{trial.number}",
         monitor="val_acc",
         mode="max",
-        save_top_k=args.save_top_k
+        save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger("logs/RetinaVVS/", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger("logs/RetinaVVS/", name=f"trial_{trial.number}")
 
     # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, gpus=1, early_stop_callback=early_stop,
-                                            checkpoint_callback=model_checkpoint, max_epochs=100,
-                                            fast_dev_run=False, logger=tb_logger)
-    trainer.fit(model)
+    trainer = pl.Trainer(gpus=1, early_stop_callback=early_stop,
+                         checkpoint_callback=model_checkpoint, max_epochs=100,
+                         fast_dev_run=True, logger=tb_logger)
+    trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
+
+    # Get model accuracy
+    val_accuracy = []
+    with torch.no_grad():
+        for images, labels in tqdm(val_data, total=len(val_data), desc="Evaluating Model"):
+            predictions = model(images)
+            val_accuracy.append(accuracy_score(labels, predictions.argmax(dim=-1)))
+        val_accuracy = sum(val_accuracy) / len(val_accuracy)
+
+    return val_accuracy
+
+
+if __name__ == "__main__":
+    # Terminal Arguments
+    parser = ArgumentParser()
+    parser = pl.Trainer.add_argparse_args(parser)
+    parser.add_argument("--n_trials", default=20)
+    args = parser.parse_args()
+
+    # Run optuna bayesian inference hyperparameter search
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=args.n_trials)
+    study.trials_dataframe().to_hdf("studies/RetinaVVS", key="study")
