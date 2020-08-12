@@ -3,12 +3,11 @@ from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
 from kornia.feature.siftdesc import SIFTDescriptor
 from torchvision.datasets import CIFAR10
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from torchvision import transforms
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torch.nn as nn
-from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import optuna
@@ -27,7 +26,6 @@ class SIFT(nn.Module):
         self.sift = SIFTDescriptor(patch_size, num_ang_bins, num_spatial_bins, root_sift, clip_val)
 
     def forward(self, image_batch):
-        bs = image_batch.shape[0]  # Batch size
         c = image_batch.shape[1]  # Number of image channels
         ps = self.ps  # Patch size
 
@@ -41,13 +39,20 @@ class SIFT(nn.Module):
 
 class SIFTRetinaVVS(pl.LightningModule):
 
-    def __init__(self, batch_size, input_shape, ret_channels, vvs_layers, patch_size, dropout):
+    def __init__(self, hparams):
         super(SIFTRetinaVVS, self).__init__()
 
+        # Gather model hparams
+        input_shape = hparams["input_shape"]
+        ret_channels = hparams["ret_channels"]
+        vvs_layers = hparams["vvs_layers"]
+        dropout = hparams["dropout"]
+        sift_type = hparams["sift_type"]
+        if sift_type != "none":
+            patch_size = hparams["patch_size"]
+
         # Model Parameters
-        self.batch_size = batch_size
-        self.name = f"RetChannels-{ret_channels}_VVSLayers-{vvs_layers}_PatchSize-{patch_size}_"
-        self.name += f"Dropout-{int(dropout * 100)}_BatchSize-{batch_size}"
+        self.sift_type = sift_type
 
         # Retina Net
         self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
@@ -63,33 +68,45 @@ class SIFTRetinaVVS(pl.LightningModule):
         for _ in range(vvs_layers-1):
             self.vvs_conv.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=9))
             self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        self.sift = SIFT(patch_size=patch_size)
-        in_features = 32 * input_shape[0] * int(input_shape[1]/patch_size)**2 * 128  # Number of SIFT outputs
+        if self.sift_type == "ret_start":
+            in_features = 32 * 32 * 32 + 128 * input_shape[0] * int(input_shape[1] / patch_size) ** 2
+        elif self.sift_type == "vvs_end":
+            in_features = 32 * input_shape[0] * int(input_shape[1] / patch_size) ** 2 * 128
+        else:
+            in_features = 32 * 32 * 32
+
         self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
         self.outputs = nn.Linear(in_features=1024, out_features=10)
 
-        # Define Dropout and Padding Layers
+        # Define Dropout, Padding and SIFT Layers
+        if self.sift_type != "none":
+            self.sift = SIFT(patch_size=patch_size)
         self.pad = nn.ZeroPad2d(4)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, t):
-        batch_size = t.shape[0]
+    def forward(self, tensor):
+        batch_size = tensor.shape[0]
 
         # Retina forward pass
-        t = self.pad(self.ret_bn1(F.relu(self.inputs(t))))
+        t = self.pad(self.ret_bn1(F.relu(self.inputs(tensor))))
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
 
         # VVS forward pass
         for conv, bn in zip(self.vvs_conv, self.vvs_bn):
             t = self.pad(bn(F.relu(conv(t))))
-        t = self.sift(t).reshape(batch_size, -1)
+        if self.sift_type == "vvs_end":
+            t = self.sift(t).reshape(batch_size, -1)
+        elif self.sift_type == "ret_start":
+            t = torch.cat((t.reshape(-1, 32*32*32), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
+        else:
+            t = t.reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
 
         return t
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters())
+        optimizer = torch.optim.RMSprop(self.parameters())
         return optimizer
 
     @staticmethod
@@ -189,13 +206,15 @@ class SIFTRetinaVVS(pl.LightningModule):
         return results
 
 
-def objective(trial):
+def objective(trial, args):
     # Optuna trial parameters
-    batch_size = trial.suggest_categorical("batch_size", [32, 64, 128, 256])
+    batch_size = trial.suggest_categorical("batch_size", [32, 64])
     ret_channels = trial.suggest_categorical("ret_channels", [8, 16, 32, 64])
-    vvs_layers = trial.suggest_int("vvs_layers", 1, 6)
-    patch_size = trial.suggest_categorical("patch_size", [8, 16, 32])
-    dropout = trial.suggest_discrete_uniform("dropout", 0.0, 0.5, 0.01)
+    vvs_layers = trial.suggest_int("vvs_layers", 3, 6)
+    if args.sift_type != "none":
+        patch_size = trial.suggest_categorical("patch_size", [8, 16, 32])
+    # dropout = trial.suggest_discrete_uniform("dropout", 0.0, 0.5, 0.01)
+    dropout = 0
 
     # Train and validation dataloaders
     transform = transforms.Compose([
@@ -203,6 +222,7 @@ def objective(trial):
         transforms.ToTensor()
     ])
     train_data = CIFAR10(root="data/CIFAR10", download=False, train=True, transform=transform)
+    input_shape = tuple(train_data[0][0].shape)
     val_size = int(0.2 * len(train_data))
     train_size = len(train_data) - val_size
     train_data, val_data = random_split(train_data, [train_size, val_size],
@@ -211,48 +231,58 @@ def objective(trial):
     val_data = DataLoader(val_data, batch_size=batch_size, num_workers=12)
 
     # Create model
-    model = SIFTRetinaVVS(batch_size, (1, 32, 32), ret_channels,
-                          vvs_layers, patch_size, dropout)
+    params = {
+        "ret_channels": ret_channels,
+        "vvs_layers": vvs_layers,
+        "dropout": dropout,
+        "sift_type": args.sift_type,
+        "input_shape": input_shape
+    }
+    if params["sift_type"] != "none":
+        params["patch_size"] = patch_size
+    model = SIFTRetinaVVS(params)
 
     # Callbacks
+    if args.sift_type == "none":
+        file_name = "RetinaVVS/"
+    else:
+        file_name = "SIFT" + args.sift_type + "/"
     early_stop = pl.callbacks.EarlyStopping(
         monitor="val_loss",
-        patience=3,
+        patience=args.es_patience,
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath="models/SIFT/",
+        filepath="models/" + file_name,
         prefix=f"trial_{trial.number}",
-        monitor="val_loss",
-        mode="min",
+        monitor="val_acc",
+        mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger("logs/SIFT/", name=f"trial_{trial.number}")
+    tb_logger = pl_loggers.TensorBoardLogger("logs/" + file_name, name=f"trial_{trial.number}")
 
     # Train the model
-    trainer = pl.Trainer(gpus=1, early_stop_callback=early_stop,
-                         checkpoint_callback=model_checkpoint, max_epochs=100,
-                         fast_dev_run=False, logger=tb_logger)
+    trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop,
+                                            checkpoint_callback=model_checkpoint, max_epochs=100,
+                                            logger=tb_logger, fast_dev_run=False)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
-    # Evaluate model
-    val_accuracy = []
-    with torch.no_grad():
-        for images, labels in tqdm(val_data, total=len(val_data), desc="Evaluating Model"):
-            predictions = model(images)
-            val_accuracy.append(accuracy_score(labels, predictions.argmax(dim=-1)))
-        val_accuracy = sum(val_accuracy) / len(val_accuracy)
-
-    return val_accuracy
+    return model_checkpoint.best_model_score
 
 
 if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
-    parser = pl.Trainer.add_argparse_args(parser)
-    parser.add_argument("--n_trials", default=1)
-    args = parser.parse_args()
+    parser.add_argument("--sift_type", type=str, default="none")
+    parser.add_argument("--n_trials", type=int, default=1)
+    parser.add_argument("--es_patience", type=int, default=1)
+    parser.add_argument("--gpus", type=int, default=1)
+    parser_args = parser.parse_args()
 
+    # Optuna Hyperparameter Study
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=args.n_trials)
-    study.trials_dataframe().to_hdf("studies/SIFT", key="study")
+    study.optimize(lambda trials: objective(trials, parser_args), n_trials=parser_args.n_trials)
+    study_df = study.trials_dataframe()
+    study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
+    study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
+    study_df.to_hdf("studies/SIFT_study.h5", key="study")
