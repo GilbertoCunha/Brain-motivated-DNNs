@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
 from kornia.feature.siftdesc import SIFTDescriptor
 from torchvision.datasets import CIFAR10
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from torchvision import transforms
 import torch.nn.functional as F
 import pytorch_lightning as pl
@@ -47,12 +47,12 @@ class SIFTRetinaVVS(pl.LightningModule):
         ret_channels = hparams["ret_channels"]
         vvs_layers = hparams["vvs_layers"]
         dropout = hparams["dropout"]
-        sift_type = hparams["sift_type"]
-        if sift_type != "none":
+        if hparams["sift_type"] != "none":
             patch_size = hparams["patch_size"]
 
         # Model Parameters
-        self.sift_type = sift_type
+        self.sift_type = hparams["sift_type"]
+        self.lr = hparams["lr"]
 
         # Retina Net
         self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
@@ -106,7 +106,7 @@ class SIFTRetinaVVS(pl.LightningModule):
         return t
 
     def configure_optimizers(self):
-        optimizer = torch.optim.RMSprop(self.parameters())
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
 
     @staticmethod
@@ -121,10 +121,7 @@ class SIFTRetinaVVS(pl.LightningModule):
         predictions = self(images)
 
         # Get batch metrics
-        accuracy = accuracy_score(
-            labels.cpu().detach().numpy(),
-            predictions.argmax(dim=-1).cpu().detach().numpy()
-        )
+        accuracy = predictions.argmax(dim=-1).eq(labels).sum().true_divide(predictions.shape[0])
         loss = self.cross_entropy_loss(predictions, labels)
 
         # Get train batch output
@@ -141,7 +138,7 @@ class SIFTRetinaVVS(pl.LightningModule):
     def training_epoch_end(self, outputs):
         # Get epoch average metrics
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
-        avg_acc = np.stack([batch["acc"] for batch in outputs]).mean()
+        avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
 
         # Get ROC_AUC
@@ -177,7 +174,7 @@ class SIFTRetinaVVS(pl.LightningModule):
 
         # Get epoch average metrics
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
-        avg_acc = np.stack([batch["acc"] for batch in outputs]).mean()
+        avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
 
         # Progress bar log
@@ -208,13 +205,10 @@ class SIFTRetinaVVS(pl.LightningModule):
 
 def objective(trial, args):
     # Optuna trial parameters
-    batch_size = trial.suggest_categorical("batch_size", [32, 64])
+    batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
     ret_channels = trial.suggest_categorical("ret_channels", [8, 16, 32, 64])
-    vvs_layers = trial.suggest_int("vvs_layers", 3, 6)
-    if args.sift_type != "none":
-        patch_size = trial.suggest_categorical("patch_size", [8, 16, 32])
-    # dropout = trial.suggest_discrete_uniform("dropout", 0.0, 0.5, 0.01)
-    dropout = 0
+    vvs_layers = trial.suggest_int("vvs_layers", 1, 4)
+    dropout = trial.suggest_discrete_uniform("dropout", 0.05, 0.4, 0.01)
 
     # Train and validation dataloaders
     transform = transforms.Compose([
@@ -236,35 +230,36 @@ def objective(trial, args):
         "vvs_layers": vvs_layers,
         "dropout": dropout,
         "sift_type": args.sift_type,
-        "input_shape": input_shape
+        "input_shape": input_shape,
+        "lr": 1e-3
     }
     if params["sift_type"] != "none":
+        patch_size = trial.suggest_categorical("patch_size", [8, 16, 32])
         params["patch_size"] = patch_size
+        file_name = f"SIFT_{parser_args.sift_type}/"
+    else:
+        file_name = "RetinaVVS/"
     model = SIFTRetinaVVS(params)
 
     # Callbacks
-    if args.sift_type == "none":
-        file_name = "RetinaVVS/"
-    else:
-        file_name = "SIFT" + args.sift_type + "/"
     early_stop = pl.callbacks.EarlyStopping(
         monitor="val_loss",
         patience=args.es_patience,
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath="models/" + file_name,
+        filepath=f"models/{file_name}",
         prefix=f"trial_{trial.number}",
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger("logs/" + file_name, name=f"trial_{trial.number}")
+    tb_logger = pl_loggers.TensorBoardLogger(f"logs/{file_name}", name=f"trial_{trial.number}")
 
     # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop,
-                                            checkpoint_callback=model_checkpoint, max_epochs=100,
-                                            logger=tb_logger, fast_dev_run=False)
+    trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
+                                            checkpoint_callback=model_checkpoint, auto_lr_find=True,
+                                            logger=tb_logger, fast_dev_run=False, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
     return model_checkpoint.best_model_score
@@ -274,15 +269,21 @@ if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
     parser.add_argument("--sift_type", type=str, default="none")
-    parser.add_argument("--n_trials", type=int, default=1)
-    parser.add_argument("--es_patience", type=int, default=1)
+    parser.add_argument("--n_trials", type=int, default=20)
+    parser.add_argument("--es_patience", type=int, default=8)
     parser.add_argument("--gpus", type=int, default=1)
     parser_args = parser.parse_args()
 
     # Optuna Hyperparameter Study
     study = optuna.create_study(direction="maximize")
     study.optimize(lambda trials: objective(trials, parser_args), n_trials=parser_args.n_trials)
+
+    # Save dataframe
+    if parser_args.sift_type == "none":
+        study_name = "RetinaVVS"
+    else:
+        study_name = f"SIFT_{parser_args.sift_type}"
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf("studies/SIFT_study.h5", key="study")
+    study_df.to_hdf(f"studies/{study_name}.h5", key="study")
