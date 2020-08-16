@@ -53,6 +53,9 @@ class SIFTRetinaVVS(pl.LightningModule):
         # Model Parameters
         self.sift_type = hparams["sift_type"]
         self.lr = hparams["lr"]
+        self.name = f"RetinaChans{ret_channels}_VVSLayers{vvs_layers}"
+        if hparams["sift_type"] != "none":
+            self.name += f"_PatchSize{patch_size}"
 
         # Retina Net
         self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
@@ -72,6 +75,8 @@ class SIFTRetinaVVS(pl.LightningModule):
             in_features = 32 * 32 * 32 + 128 * input_shape[0] * int(input_shape[1] / patch_size) ** 2
         elif self.sift_type == "vvs_end":
             in_features = 32 * input_shape[0] * int(input_shape[1] / patch_size) ** 2 * 128
+        elif self.sift_type == "both":
+            in_features = 33 * input_shape[0] * int(input_shape[1] / patch_size) ** 2 * 128
         else:
             in_features = 32 * 32 * 32
 
@@ -97,7 +102,10 @@ class SIFTRetinaVVS(pl.LightningModule):
         if self.sift_type == "vvs_end":
             t = self.sift(t).reshape(batch_size, -1)
         elif self.sift_type == "ret_start":
-            t = torch.cat((t.reshape(-1, 32*32*32), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
+            t = torch.cat((t.reshape(batch_size, -1), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
+        elif self.sift_type == "both":
+            t = self.sift(t).reshape(batch_size, -1)
+            t = torch.cat((t.reshape(batch_size, -1), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
         else:
             t = t.reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
@@ -205,10 +213,12 @@ class SIFTRetinaVVS(pl.LightningModule):
 
 def objective(trial, args):
     # Optuna trial parameters
-    batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
-    ret_channels = trial.suggest_categorical("ret_channels", [8, 16, 32, 64])
-    vvs_layers = trial.suggest_int("vvs_layers", 1, 4)
-    dropout = trial.suggest_discrete_uniform("dropout", 0.05, 0.4, 0.01)
+    batch_size = trial.suggest_categorical("batch_size", [32])
+    ret_channels = trial.suggest_categorical("ret_channels", [64])
+    vvs_layers = trial.suggest_int("vvs_layers", 5, 5)
+    sift_type = trial.suggest_categorical("sift_type", ["both"])
+    # dropout = trial.suggest_discrete_uniform("dropout", 0.0, 0.4, 0.01)
+    dropout = 0
 
     # Train and validation dataloaders
     transform = transforms.Compose([
@@ -229,14 +239,14 @@ def objective(trial, args):
         "ret_channels": ret_channels,
         "vvs_layers": vvs_layers,
         "dropout": dropout,
-        "sift_type": args.sift_type,
+        "sift_type": sift_type,
         "input_shape": input_shape,
         "lr": 1e-3
     }
     if params["sift_type"] != "none":
         patch_size = trial.suggest_categorical("patch_size", [8, 16, 32])
         params["patch_size"] = patch_size
-        file_name = f"SIFT_{parser_args.sift_type}/"
+        file_name = f"SIFT_{sift_type}/"
     else:
         file_name = "RetinaVVS/"
     model = SIFTRetinaVVS(params)
@@ -249,12 +259,12 @@ def objective(trial, args):
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
         filepath=f"models/{file_name}",
-        prefix=f"trial_{trial.number}",
+        prefix=model.name,
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"logs/{file_name}", name=f"trial_{trial.number}")
+    tb_logger = pl_loggers.TensorBoardLogger(f"logs/{file_name}", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
@@ -268,22 +278,29 @@ def objective(trial, args):
 if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
-    parser.add_argument("--sift_type", type=str, default="none")
+    # parser.add_argument("--sift_type", type=str, default="none")
     parser.add_argument("--n_trials", type=int, default=20)
-    parser.add_argument("--es_patience", type=int, default=8)
+    parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
     parser_args = parser.parse_args()
 
     # Optuna Hyperparameter Study
-    study = optuna.create_study(direction="maximize")
+    search_space = {
+        'batch_size': [32],
+        'ret_channels': [64],
+        'vvs_layers': [5],
+        'patch_size': [8, 16, 32],
+        'sift_type': ["both"]
+    }
+    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
     study.optimize(lambda trials: objective(trials, parser_args), n_trials=parser_args.n_trials)
 
     # Save dataframe
-    if parser_args.sift_type == "none":
-        study_name = "RetinaVVS"
-    else:
-        study_name = f"SIFT_{parser_args.sift_type}"
+    # if parser_args.sift_type == "none":
+    #     study_name = "RetinaVVS"
+    # else:
+    #     study_name = f"SIFT_{parser_args.sift_type}_Grid2"
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"studies/sifts_both_grid3.h5", key="study")
