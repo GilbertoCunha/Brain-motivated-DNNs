@@ -1,4 +1,4 @@
-sift_type,patch_size,batch_size,ret_channels,vvs_layers,dropout,val_acc
+structure_type,patch_size,batch_size,ret_channels,vvs_layers,dropout,val_acc
 RetinaVVS,NaN,32,16,3,0,0.652755558490753
 RetinaVVS,NaN,32,32,4,0,0.659644544124603
 RetinaVVS,NaN,32,64,5,0,0.6737220287323
