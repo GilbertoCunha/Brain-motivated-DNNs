@@ -1,4 +1,4 @@
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
 from kornia.feature.siftdesc import SIFTDescriptor
@@ -211,14 +211,13 @@ class SIFTRetinaVVS(pl.LightningModule):
         return results
 
 
-def objective(trial, args):
+def objective(trial, args, search):
     # Optuna trial parameters
-    batch_size = trial.suggest_categorical("batch_size", [32])
-    ret_channels = trial.suggest_categorical("ret_channels", [64])
-    vvs_layers = trial.suggest_int("vvs_layers", 5, 5)
-    sift_type = trial.suggest_categorical("sift_type", ["both"])
-    # dropout = trial.suggest_discrete_uniform("dropout", 0.0, 0.4, 0.01)
-    dropout = 0
+    batch_size = trial.suggest_categorical("batch_size", search["batch_size"])
+    ret_channels = trial.suggest_categorical("ret_channels", search["ret_channels"])
+    vvs_layers = trial.suggest_categorical("vvs_layers", search["vvs_layers"])
+    sift_type = trial.suggest_categorical("sift_type", search["sift_type"])
+    dropout = trial.suggest_categorical("dropout", search["dropout"])
 
     # Train and validation dataloaders
     transform = transforms.Compose([
@@ -244,7 +243,7 @@ def objective(trial, args):
         "lr": 1e-3
     }
     if params["sift_type"] != "none":
-        patch_size = trial.suggest_categorical("patch_size", [8, 16, 32])
+        patch_size = trial.suggest_categorical("patch_size", search["patch_size"])
         params["patch_size"] = patch_size
         file_name = f"SIFT_{sift_type}/"
     else:
@@ -278,7 +277,6 @@ def objective(trial, args):
 if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
-    # parser.add_argument("--sift_type", type=str, default="none")
     parser.add_argument("--n_trials", type=int, default=20)
     parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
@@ -289,18 +287,14 @@ if __name__ == "__main__":
         'batch_size': [32],
         'ret_channels': [64],
         'vvs_layers': [5],
-        'patch_size': [8, 16, 32],
-        'sift_type': ["both"]
+        'dropout': [0.0],
+        'sift_type': ["none"]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
-    study.optimize(lambda trials: objective(trials, parser_args), n_trials=parser_args.n_trials)
+    study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)
 
-    # Save dataframe
-    # if parser_args.sift_type == "none":
-    #     study_name = "RetinaVVS"
-    # else:
-    #     study_name = f"SIFT_{parser_args.sift_type}_Grid2"
+    # Process study dataframe
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"studies/sifts_both_grid3.h5", key="study")
+    study_df.to_hdf(f"studies/retina_vvs_grid5.h5", key="study")
