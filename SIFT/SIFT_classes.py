@@ -38,8 +38,8 @@ class SIFTRetinaStart(RetinaVVS):
         self.name += f"_PatchSize{patch_size}"
 
         # Modify model parameters
-        in_features = 32 * 32 * 32 + 128 * input_shape[0] * int(input_shape[1] / patch_size) ** 2
-        self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
+        features = 32 * input_shape[1] * input_shape[2] + 128 * input_shape[0] * int(input_shape[1] / patch_size) ** 2
+        self.vvs_fc = nn.Linear(in_features=features, out_features=1024)
         self.sift = SIFT(patch_size=patch_size)
 
     def forward(self, tensor):

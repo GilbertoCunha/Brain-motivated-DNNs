@@ -12,6 +12,7 @@ class RetinaVVS(pl.LightningModule):
         super(RetinaVVS, self).__init__()
 
         # Gather hparams
+        input_shape = hparams["input_shape"]
         ret_channels = hparams["ret_channels"]
         vvs_layers = hparams["vvs_layers"]
         dropout = hparams["dropout"]
@@ -35,7 +36,8 @@ class RetinaVVS(pl.LightningModule):
         for _ in range(vvs_layers-1):
             self.vvs_conv.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=9))
             self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        self.vvs_fc = nn.Linear(in_features=32*32*32, out_features=1024)
+        features = 32 * input_shape[1] * input_shape[2]
+        self.vvs_fc = nn.Linear(in_features=features, out_features=1024)
         self.outputs = nn.Linear(in_features=1024, out_features=10)
 
         # Define Dropout, Padding

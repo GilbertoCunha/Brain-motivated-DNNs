@@ -12,13 +12,8 @@ import torch
 
 def objective(trial, args, search):
     # Optuna trial parameters
-    batch_size = trial.suggest_categorical("batch_size", search["batch_size"])
-    params = {
-        "ret_channels": trial.suggest_categorical("ret_channels", search["ret_channels"]),
-        "vvs_layers": trial.suggest_categorical("vvs_layers", search["vvs_layers"]),
-        "dropout": trial.suggest_categorical("dropout", search["dropout"]),
-        "lr": 1e-3
-    }
+    params = {key: trial.suggest_categorical(key, value) for key, value in search.items()}
+    params["lr"]: 1e-3
 
     # Train and validation dataloaders
     transform = transforms.Compose([
@@ -31,8 +26,8 @@ def objective(trial, args, search):
     train_size = len(train_data) - val_size
     train_data, val_data = random_split(train_data, [train_size, val_size],
                                         generator=torch.Generator().manual_seed(trial.number))
-    train_data = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=12)
-    val_data = DataLoader(val_data, batch_size=batch_size, num_workers=12)
+    train_data = DataLoader(train_data, batch_size=params["batch_size"], shuffle=True, num_workers=12)
+    val_data = DataLoader(val_data, batch_size=params["batch_size"], num_workers=12)
 
     # Create model
     params["input_shape"] = input_shape

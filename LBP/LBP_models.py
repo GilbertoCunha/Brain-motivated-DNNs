@@ -4,7 +4,7 @@ from torchvision.datasets import CIFAR10
 from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
-import SIFT.SIFT_classes as SIFT_classes
+import LBP.LBP_classes as LBP_classes
 import pandas as pd
 import optuna
 import torch
@@ -31,7 +31,7 @@ def objective(trial, args, search):
 
     # Create model
     params["input_shape"] = input_shape
-    model = getattr(SIFT_classes, params["model_class"])(params)
+    model = getattr(LBP_classes, params["model_class"])(params)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -40,13 +40,13 @@ def objective(trial, args, search):
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath=f"SIFT/models/{model.filename}",
+        filepath=f"LBP/models/{model.filename}",
         prefix=model.name,
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"SIFT/logs/{model.filename}", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger(f"LBP/logs/{model.filename}", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
@@ -60,7 +60,7 @@ def objective(trial, args, search):
 if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
-    parser.add_argument("--model_class", type=str, default="SIFTRetinaStart")
+    parser.add_argument("--model_class", type=str, default="LBPRetinaStart")
     parser.add_argument("--study_name", type=str, default="test")
     parser.add_argument("--n_trials", type=int, default=1)
     parser.add_argument("--es_patience", type=int, default=3)
@@ -71,11 +71,13 @@ if __name__ == "__main__":
     study_name = parser_args.study_name
     search_space = {
         'model_class': [parser_args.model_class],
-        'batch_size': [128],
-        'ret_channels': [4],
-        'vvs_layers': [5],
+        'batch_size': [32],
+        'ret_channels': [32],
+        'vvs_layers': [4],
         'dropout': [0.0],
-        'patch_size': [32]
+        'out_channels': [32],
+        'kernel_size': [3],
+        'sparsity': [0.5]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
     study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)
@@ -84,4 +86,4 @@ if __name__ == "__main__":
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"SIFT/studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"LBP/studies/{study_name}.h5", key="study")
