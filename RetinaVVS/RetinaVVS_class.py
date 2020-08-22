@@ -18,8 +18,8 @@ class RetinaVVS(pl.LightningModule):
 
         # Model Parameters
         self.lr = hparams["lr"]
-        self.filename = "RetinaVVS"
-        self.name = f"RetinaChans{ret_channels}_VVSLayers{vvs_layers}"
+        self.filename = hparams["model_class"]
+        self.name = f"RetChans{ret_channels}_VVSLayers{vvs_layers}"
 
         # Retina Net
         self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)

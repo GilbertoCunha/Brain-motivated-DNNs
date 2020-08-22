@@ -1,10 +1,10 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
-from SIFT.SIFT_classes import SIFTRetinaVVS
 from torchvision.datasets import CIFAR10
 from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
+from RetinaVVS.RetinaVVS_class import RetinaVVS
 import pandas as pd
 import optuna
 import torch
@@ -17,7 +17,6 @@ def objective(trial, args, search):
         "ret_channels": trial.suggest_categorical("ret_channels", search["ret_channels"]),
         "vvs_layers": trial.suggest_categorical("vvs_layers", search["vvs_layers"]),
         "dropout": trial.suggest_categorical("dropout", search["dropout"]),
-        "sift_type": trial.suggest_categorical("sift_type", search["sift_type"]),
         "lr": 1e-3
     }
 
@@ -37,13 +36,7 @@ def objective(trial, args, search):
 
     # Create model
     params["input_shape"] = input_shape
-    if params["sift_type"] != "none":
-        patch_size = trial.suggest_categorical("patch_size", search["patch_size"])
-        params["patch_size"] = patch_size
-        file_name = f"SIFT_{params['sift_type']}/"
-    else:
-        file_name = "RetinaVVS/"
-    model = SIFTRetinaVVS(params)
+    model = RetinaVVS(params)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -52,13 +45,13 @@ def objective(trial, args, search):
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath=f"SIFT/models/{file_name}",
+        filepath=f"RetinaVVS/models/{model.filename}",
         prefix=model.name,
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"SIFT/logs/{file_name}", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVS/logs/{model.filename}", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
@@ -75,17 +68,16 @@ if __name__ == "__main__":
     parser.add_argument("--n_trials", type=int, default=1)
     parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
-    parser.add_argument("--sift_type", type=str, default="none")
+    parser.add_argument("--study_name", type=str, default="test")
     parser_args = parser.parse_args()
 
     # Optuna Hyperparameter Study
-    study_name = "test"
+    study_name = parser_args.study_name
     search_space = {
         'batch_size': [128],
         'ret_channels': [4],
         'vvs_layers': [5],
-        'dropout': [0.0],
-        'sift_type': [parser_args.sift_type]
+        'dropout': [0.0]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
     study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)
@@ -94,4 +86,4 @@ if __name__ == "__main__":
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"SIFT/studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"RetinaVVS/studies/{study_name}.h5", key="study")

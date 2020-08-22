@@ -35,7 +35,6 @@ class SIFTRetinaStart(RetinaVVS):
         patch_size = hparams["patch_size"]
 
         # Model identifiers
-        self.filename = "SIFT_Ret_Start"
         self.name += f"_PatchSize{patch_size}"
 
         # Modify model parameters
@@ -69,7 +68,6 @@ class SIFTVVSEnd(RetinaVVS):
         patch_size = hparams["patch_size"]
 
         # Model Parameters
-        self.filename = "SIFT_VVS_End"
         self.name += f"_PatchSize{patch_size}"
 
         # Change model parameters
@@ -103,7 +101,6 @@ class SIFTBoth(RetinaVVS):
         patch_size = hparams["patch_size"]
 
         # Model Parameters
-        self.filename = "SIFT_Both"
         self.name += f"_PatchSize{patch_size}"
 
         # Modify model parameters
