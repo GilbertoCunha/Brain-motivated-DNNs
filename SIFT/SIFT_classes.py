@@ -1,18 +1,14 @@
 from kornia.feature.siftdesc import SIFTDescriptor
-from sklearn.metrics import roc_auc_score
+from RetinaVVS.RetinaVVS_class import RetinaVVS
 import torch.nn.functional as F
-import pytorch_lightning as pl
 import torch.nn as nn
-import numpy as np
 import torch
-import time
 
 
 class SIFT(nn.Module):
     """
     A SIFT class that automatically processes one batch of images using kornia's sift descriptor
     """
-
     def __init__(self, patch_size=65, num_ang_bins=8, num_spatial_bins=4, clip_val=0.2, root_sift=False):
         super(SIFT, self).__init__()
         self.ps = patch_size
@@ -30,57 +26,22 @@ class SIFT(nn.Module):
         return outputs
 
 
-class SIFTRetinaVVS(pl.LightningModule):
-
+class SIFTRetinaStart(RetinaVVS):
     def __init__(self, hparams):
-        super(SIFTRetinaVVS, self).__init__()
+        super(SIFTRetinaStart, self).__init__(hparams)
 
-        # Gather model hparams
+        # Gather hparams
         input_shape = hparams["input_shape"]
-        ret_channels = hparams["ret_channels"]
-        vvs_layers = hparams["vvs_layers"]
-        dropout = hparams["dropout"]
-        if hparams["sift_type"] != "none":
-            patch_size = hparams["patch_size"]
+        patch_size = hparams["patch_size"]
 
-        # Model Parameters
-        self.sift_type = hparams["sift_type"]
-        self.lr = hparams["lr"]
-        self.name = f"RetinaChans{ret_channels}_VVSLayers{vvs_layers}"
-        if hparams["sift_type"] != "none":
-            self.name += f"_PatchSize{patch_size}"
+        # Model identifiers
+        self.filename = "SIFT_Ret_Start"
+        self.name += f"_PatchSize{patch_size}"
 
-        # Retina Net
-        self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
-        self.ret_bn1 = nn.BatchNorm2d(num_features=32)
-        self.ret_conv = nn.Conv2d(in_channels=32, out_channels=ret_channels, kernel_size=9)
-        self.ret_bn2 = nn.BatchNorm2d(num_features=ret_channels)
-
-        # VVS_Net
-        self.vvs_conv = nn.ModuleList()
-        self.vvs_bn = nn.ModuleList()
-        self.vvs_conv.append(nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9))
-        self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        for _ in range(vvs_layers-1):
-            self.vvs_conv.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=9))
-            self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        if self.sift_type == "ret_start":
-            in_features = 32 * 32 * 32 + 128 * input_shape[0] * int(input_shape[1] / patch_size) ** 2
-        elif self.sift_type == "vvs_end":
-            in_features = 32 * input_shape[0] * int(input_shape[1] / patch_size) ** 2 * 128
-        elif self.sift_type == "both":
-            in_features = 33 * input_shape[0] * int(input_shape[1] / patch_size) ** 2 * 128
-        else:
-            in_features = 32 * 32 * 32
-
+        # Modify model parameters
+        in_features = 32 * 32 * 32 + 128 * input_shape[0] * int(input_shape[1] / patch_size) ** 2
         self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
-        self.outputs = nn.Linear(in_features=1024, out_features=10)
-
-        # Define Dropout, Padding and SIFT Layers
-        if self.sift_type != "none":
-            self.sift = SIFT(patch_size=patch_size)
-        self.pad = nn.ZeroPad2d(4)
-        self.dropout = nn.Dropout(dropout)
+        self.sift = SIFT(patch_size=patch_size)
 
     def forward(self, tensor):
         batch_size = tensor.shape[0]
@@ -92,113 +53,77 @@ class SIFTRetinaVVS(pl.LightningModule):
         # VVS forward pass
         for conv, bn in zip(self.vvs_conv, self.vvs_bn):
             t = self.pad(bn(F.relu(conv(t))))
-        if self.sift_type == "vvs_end":
-            t = self.sift(t).reshape(batch_size, -1)
-        elif self.sift_type == "ret_start":
-            t = torch.cat((t.reshape(batch_size, -1), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
-        elif self.sift_type == "both":
-            t = self.sift(t).reshape(batch_size, -1)
-            t = torch.cat((t.reshape(batch_size, -1), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
-        else:
-            t = t.reshape(batch_size, -1)
+        t = torch.cat((t.reshape(batch_size, -1), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
 
         return t
 
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        return optimizer
 
-    @staticmethod
-    def cross_entropy_loss(predictions, labels):
-        return F.cross_entropy(predictions, labels)
+class SIFTVVSEnd(RetinaVVS):
+    def __init__(self, hparams):
+        super(SIFTVVSEnd, self).__init__(hparams)
 
-    def training_step(self, batch, batch_id):
-        start = time.time()
+        # Gather hparams
+        input_shape = hparams["input_shape"]
+        patch_size = hparams["patch_size"]
 
-        # Get predictions
-        images, labels = batch
-        predictions = self(images)
+        # Model Parameters
+        self.filename = "SIFT_VVS_End"
+        self.name += f"_PatchSize{patch_size}"
 
-        # Get batch metrics
-        accuracy = predictions.argmax(dim=-1).eq(labels).sum().true_divide(predictions.shape[0])
-        loss = self.cross_entropy_loss(predictions, labels)
+        # Change model parameters
+        in_features = 32 * input_shape[0] * int(input_shape[1] / patch_size) ** 2 * 128
+        self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
+        self.sift = SIFT(patch_size=patch_size)
 
-        # Get train batch output
-        output = {
-            "labels": labels,
-            "predictions": F.softmax(predictions, dim=-1),
-            "loss": loss,
-            "acc": accuracy,
-            "time": time.time() - start
-        }
+    def forward(self, tensor):
+        batch_size = tensor.shape[0]
 
-        return output
+        # Retina forward pass
+        t = self.pad(self.ret_bn1(F.relu(self.inputs(tensor))))
+        t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
 
-    def training_epoch_end(self, outputs):
-        # Get epoch average metrics
-        avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
-        avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
-        total_time = np.stack([batch["time"] for batch in outputs]).sum()
+        # VVS forward pass
+        for conv, bn in zip(self.vvs_conv, self.vvs_bn):
+            t = self.pad(bn(F.relu(conv(t))))
+        t = self.sift(t).reshape(batch_size, -1)
+        t = self.dropout(F.relu(self.vvs_fc(t)))
+        t = self.outputs(t)
 
-        # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
-        auc = roc_auc_score(labels, predictions, multi_class="ovr")
+        return t
 
-        # Tensorboard log
-        tensorboard_logs = {
-            "train_loss": avg_loss,
-            "train_acc": avg_acc,
-            "train_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
 
-        # Get returns
-        results = {
-            "train_loss": avg_loss,
-            "log": tensorboard_logs
-        }
+class SIFTBoth(RetinaVVS):
+    def __init__(self, hparams):
+        super(SIFTBoth, self).__init__(hparams)
 
-        return results
+        # Gather hparams
+        input_shape = hparams["input_shape"]
+        patch_size = hparams["patch_size"]
 
-    def validation_step(self, batch, batch_id):
-        return self.training_step(batch, batch_id)
+        # Model Parameters
+        self.filename = "SIFT_Both"
+        self.name += f"_PatchSize{patch_size}"
 
-    def validation_epoch_end(self, outputs):
-        # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
-        auc = roc_auc_score(labels, predictions, multi_class="ovr")
+        # Modify model parameters
+        in_features = 33 * input_shape[0] * int(input_shape[1] / patch_size) ** 2 * 128
+        self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
+        self.sift = SIFT(patch_size=patch_size)
 
-        # Get epoch average metrics
-        avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
-        avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
-        total_time = np.stack([batch["time"] for batch in outputs]).sum()
+    def forward(self, tensor):
+        batch_size = tensor.shape[0]
 
-        # Progress bar log
-        progress_bar = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc
-        }
+        # Retina forward pass
+        t = self.pad(self.ret_bn1(F.relu(self.inputs(tensor))))
+        t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
 
-        # Tensorboard log
-        tensorboard_logs = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
+        # VVS forward pass
+        for conv, bn in zip(self.vvs_conv, self.vvs_bn):
+            t = self.pad(bn(F.relu(conv(t))))
+        t = self.sift(t).reshape(batch_size, -1)
+        t = torch.cat((t.reshape(batch_size, -1), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
+        t = self.dropout(F.relu(self.vvs_fc(t)))
+        t = self.outputs(t)
 
-        # Define return
-        results = {
-            "val_loss": avg_loss,
-            "log": tensorboard_logs,
-            "progress_bar": progress_bar
-        }
-
-        return results
+        return t
