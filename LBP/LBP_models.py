@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
 import LBP.LBP_classes as LBP_classes
+from functools import reduce
 import pandas as pd
 import optuna
 import torch
@@ -60,9 +61,9 @@ def objective(trial, args, search):
 if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
-    parser.add_argument("--model_class", type=str, default="LBPRetinaStart")
+    parser.add_argument("--model_class", type=str, default="LBPVVSEnd")
     parser.add_argument("--study_name", type=str, default="test")
-    parser.add_argument("--n_trials", type=int, default=1)
+    # parser.add_argument("--n_trials", type=int, default=10)
     parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
     parser_args = parser.parse_args()
@@ -75,12 +76,13 @@ if __name__ == "__main__":
         'ret_channels': [32],
         'vvs_layers': [4],
         'dropout': [0.0],
-        'out_channels': [32],
-        'kernel_size': [3],
-        'sparsity': [0.5]
+        'out_channels': [8, 16, 32],
+        'kernel_size': [9],
+        'sparsity': [0.1, 0.3, 0.5, 0.8]
     }
+    n_trials = reduce(lambda x, y: x*y, [len(value) for _, value in search_space.items()])
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
-    study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)
+    study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=n_trials)
 
     # Process study dataframe
     study_df = study.trials_dataframe()
