@@ -1,10 +1,10 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
+import RetinaVVS.RetinaVVS_class as RetinaVVS_class
+from argparse import ArgumentParser, Namespace
 from torchvision.datasets import CIFAR10
-from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
-from RetinaVVS.RetinaVVS_class import RetinaVVS
 import pandas as pd
 import optuna
 import torch
@@ -13,7 +13,7 @@ import torch
 def objective(trial, args, search):
     # Optuna trial parameters
     params = {key: trial.suggest_categorical(key, value) for key, value in search.items()}
-    params["lr"]: 1e-3
+    params["lr"] = 1e-3
 
     # Train and validation dataloaders
     transform = transforms.Compose([
@@ -31,7 +31,7 @@ def objective(trial, args, search):
 
     # Create model
     params["input_shape"] = input_shape
-    model = RetinaVVS(params)
+    model = getattr(RetinaVVS_class, params["model_class"])(params)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -40,19 +40,24 @@ def objective(trial, args, search):
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath=f"RetinaVVS/models/{model.filename}",
+        filepath=f"RetinaVVS/models",
         prefix=model.name,
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVS/logs/{model.filename}", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVS/logs/", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
                                             checkpoint_callback=model_checkpoint, auto_lr_find=True,
                                             logger=tb_logger, fast_dev_run=False, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
+
+    # Save model state dict
+    checkpoint = torch.load(model_checkpoint.best_model_path)
+    model.load_state_dict(checkpoint["state_dict"])
+    torch.save(model.state_dict(), f"RetinaVVS/state_dicts/{model.name}.tar")
 
     return model_checkpoint.best_model_score
 
@@ -69,10 +74,11 @@ if __name__ == "__main__":
     # Optuna Hyperparameter Study
     study_name = parser_args.study_name
     search_space = {
-        'batch_size': [128],
-        'ret_channels': [4],
-        'vvs_layers': [5],
-        'dropout': [0.0]
+        'batch_size': [32],
+        'ret_channels': [32],
+        'vvs_layers': [4],
+        'dropout': [0.0],
+        'model_class': ["RetinaVVS"]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
     study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)

@@ -73,7 +73,7 @@ class LBPVVSEnd(RetinaVVS):
 
         # Change model parameters
         self.lbp = ConvLBP(in_channels=32, out_channels=out_channels, kernel_size=kernel_size, sparsity=sparsity)
-        # TODO: find correct number of features
+        # TODO: generalize number of features
         in_features = int(out_channels * 36992 / 32)
         self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
 
@@ -110,7 +110,7 @@ class LBPBoth(RetinaVVS):
         # Modify model parameters
         self.lbp_start = ConvLBP(in_channels=1, out_channels=out_channels, kernel_size=kernel_size, sparsity=sparsity)
         self.lbp_end = ConvLBP(in_channels=32, out_channels=out_channels, kernel_size=kernel_size, sparsity=sparsity)
-        # FIXME: incorrect number of features
+        # TODO: generalize number of features
         in_features = int(2 * out_channels * 36992 / 32)
         self.vvs_fc = nn.Linear(in_features=in_features, out_features=1024)
 

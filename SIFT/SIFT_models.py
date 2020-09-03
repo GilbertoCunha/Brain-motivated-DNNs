@@ -54,6 +54,11 @@ def objective(trial, args, search):
                                             logger=tb_logger, fast_dev_run=False, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
+    # Save model state dict
+    checkpoint = torch.load(model_checkpoint.best_model_path)
+    model.load_state_dict(checkpoint["state_dict"])
+    torch.save(model.state_dict(), f"SIFT/state_dicts/{model.filename}/{model.name}.tar")
+
     return model_checkpoint.best_model_score
 
 
@@ -71,11 +76,11 @@ if __name__ == "__main__":
     study_name = parser_args.study_name
     search_space = {
         'model_class': [parser_args.model_class],
-        'batch_size': [128],
-        'ret_channels': [4],
-        'vvs_layers': [5],
+        'batch_size': [32],
+        'ret_channels': [32],
+        'vvs_layers': [4],
         'dropout': [0.0],
-        'patch_size': [32]
+        'patch_size': [8]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
     study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)
