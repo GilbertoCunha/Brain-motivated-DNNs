@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
-import RetinaVVSGraph.RetinaVVSGraph_class as RetinaVVSG_class
+import RetinaVVSGraph_class as RetinaVVSG_class
 from argparse import ArgumentParser, Namespace
 from torchvision.datasets import CIFAR10
 from torchvision import transforms
@@ -12,7 +12,8 @@ import torch
 
 def objective(trial, args, search):
     # Optuna trial parameters
-    params = {key: trial.suggest_categorical(key, value) for key, value in search.items()}
+    params = {key: trial.suggest_categorical(key, value) for key, value in search.items() if key != "vvs_graph"}
+    params["vvs_graph"] = search["vvs_graph"]
     params["lr"] = 1e-3
 
     # Train and validation dataloaders
@@ -30,6 +31,7 @@ def objective(trial, args, search):
     val_data = DataLoader(val_data, batch_size=params["batch_size"], num_workers=12)
 
     # Create model
+    print(input_shape)
     params["input_shape"] = input_shape
     model = getattr(RetinaVVSG_class, params["model_class"])(params)
 
@@ -40,24 +42,24 @@ def objective(trial, args, search):
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath=f"RetinaVVSGraphmodels",
+        filepath=f"models",
         prefix=model.name,
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVSGraph/logs/", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger(f"logs/", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
-                                            checkpoint_callback=model_checkpoint, auto_lr_find=True,
-                                            logger=tb_logger, fast_dev_run=False, max_epochs=100)
+                                            checkpoint_callback=model_checkpoint, auto_lr_find=False,
+                                            logger=tb_logger, fast_dev_run=True, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
     # Save model state dict
     checkpoint = torch.load(model_checkpoint.best_model_path)
     model.load_state_dict(checkpoint["state_dict"])
-    torch.save(model.state_dict(), f"RetinaVVSGraph/state_dicts/{model.name}.tar")
+    torch.save(model.state_dict(), f"state_dicts/{model.name}.tar")
 
     return model_checkpoint.best_model_score
 
@@ -71,20 +73,29 @@ if __name__ == "__main__":
     parser.add_argument("--study_name", type=str, default="test")
     parser_args = parser.parse_args()
 
+    # VVS Network graph
+    vvs_graph = {
+    '0': [1, 2, 4],
+    '1': [2, 3, 4],
+    '2': [3, 4],
+    '3': [4],
+    '4': ["out"]
+    }
+
     # Optuna Hyperparameter Study
     study_name = parser_args.study_name
     search_space = {
         'batch_size': [32],
         'ret_channels': [32],
-        'vvs_layers': [4],
         'dropout': [0.0],
         'model_class': ["RetinaVVSGraph"]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
+    search_space["vvs_graph"] = vvs_graph
     study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)
 
     # Process study dataframe
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"RetinaVVSGraph/studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"studies/{study_name}.h5", key="study")

@@ -61,7 +61,6 @@ class RetinaVVSGraph(pl.LightningModule):
         # Model name
         self.graph = channels_graph(graph, ret_channels)
         self.name = f"RetChans{ret_channels}_Graph{graph}"
-        print(self.name)
 
         # Retina Net
         self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
@@ -122,9 +121,12 @@ class RetinaVVSGraph(pl.LightningModule):
 
     @staticmethod
     def cross_entropy_loss(predictions, labels):
-        return F.cross_entropy(predictions, labels)
+        r = F.cross_entropy(predictions, labels)
+        print(r.shape)
+        return r
 
-    def training_step(self, batch):
+    def training_step(self, batch, new):
+        print(new)
         start = time.time()
 
         # Get predictions
