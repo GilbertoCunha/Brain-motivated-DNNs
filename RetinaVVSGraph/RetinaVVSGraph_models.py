@@ -75,13 +75,14 @@ if __name__ == "__main__":
     # VVS Network graph
     vvs_graph = {
     '0': [1],
-    '1': [2, 4],
-    '2': [3, 5],
-    '3': [4, 6],
-    '4': [5, 6],
-    '5': [6],
-    '6': [7],
-    '7': ['out']
+    '1': [2, 3],
+    '2': [4, 6],
+    '3': [5, 7],
+    '4': [6, 7],
+    '5': [6, 7],
+    '6': [8],
+    '7': [8],
+    '8': ["out"]
     }
 
     # Optuna Hyperparameter Study
@@ -100,4 +101,4 @@ if __name__ == "__main__":
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"RetinaVVSGraph/studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"RetinaVVSGraph/studies/RetChans{search_space['ret_channels'][0]}_Graph{vvs_graph}.h5", key="study")
