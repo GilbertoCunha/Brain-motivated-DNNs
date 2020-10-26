@@ -1,4 +1,3 @@
-from RetinaVVS.RetinaVVS_class import RetinaVVS
 from sklearn.metrics import roc_auc_score
 import pytorch_lightning as pl
 import torch.nn.functional as F
@@ -47,8 +46,10 @@ def channels_graph(g, r_c):
     return r
 
 
-class RetinaVVSGraph():
+class RetinaVVSGraph(pl.LightningModule):
     def __init__(self, hparams):
+        super(RetinaVVSGraph, self).__init__()
+
         # Gather hparams
         input_shape = hparams["input_shape"]
         ret_channels = hparams["ret_channels"]
@@ -61,9 +62,17 @@ class RetinaVVSGraph():
         self.graph = channels_graph(graph, ret_channels)
         self.name = f"RetChans{ret_channels}_Graph{graph}"
 
+        # Retina Net
+        self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
+        self.ret_bn1 = nn.BatchNorm2d(num_features=32)
+        self.ret_conv = nn.Conv2d(in_channels=32, out_channels=ret_channels, kernel_size=9)
+        self.ret_bn2 = nn.BatchNorm2d(num_features=ret_channels)
+
         # VVS_Net
         self.vvs_conv = nn.ModuleList()
         self.vvs_bn = nn.ModuleList()
+        # self.vvs_conv.append(nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9))
+        # self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
         for key in self.graph:
             if key != "out":
                 num_channels = self.graph[key][0]
@@ -73,9 +82,12 @@ class RetinaVVSGraph():
         
         # NOTE: This neural network might need more complexity and
         # layers due to the huge ammount of input_features
-        self.vvs_fc = nn.Linear(in_features=features, out_features=features//10)
-        self.vvs_fc2 = nn.Linear(in_features=features//10, out_features=1024)
+        self.vvs_fc = nn.Linear(in_features=features, out_features=1024)
         self.outputs = nn.Linear(in_features=1024, out_features=10)
+
+        # Define Dropout, Padding
+        self.pad = nn.ZeroPad2d(4)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, tensor):
         batch_size = tensor.shape[0]
@@ -96,7 +108,6 @@ class RetinaVVSGraph():
         t = torch.cat([t_layer_out[j] for j in self.graph["out"][1]], dim=1)
         t = t.reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
-        t = self.dropout(F.relu(self.vvs_fc2(t)))
         t = self.outputs(t)
 
         return t
