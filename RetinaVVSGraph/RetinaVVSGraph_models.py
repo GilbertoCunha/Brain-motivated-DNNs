@@ -1,10 +1,6 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
-<<<<<<< HEAD
 import RetinaVVSGraph.RetinaVVSGraph_class as RetinaVVSG
-=======
-import RetinaVVSGraph.RetinaVVSGraph_class as RetinaVVSG
->>>>>>> develop
 from argparse import ArgumentParser, Namespace
 from torchvision.datasets import CIFAR10
 from torchvision import transforms
@@ -51,19 +47,11 @@ def objective(trial, args, search):
         mode="max",
         save_top_k=1
     )
-<<<<<<< HEAD
     tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVSGraph/logs/", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
                                             checkpoint_callback=model_checkpoint, auto_lr_find=True,
-=======
-    tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVSGraph/logs/", name=model.name)
-
-    # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
-                                            checkpoint_callback=model_checkpoint, auto_lr_find=False,
->>>>>>> develop
                                             logger=tb_logger, fast_dev_run=False, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
@@ -87,7 +75,6 @@ if __name__ == "__main__":
     # VVS Network graph
     vvs_graph = {
     '0': [1],
-<<<<<<< HEAD
     '1': [2, 4],
     '2': [3, 5],
     '3': [4, 6],
@@ -95,16 +82,6 @@ if __name__ == "__main__":
     '5': [6],
     '6': [7],
     '7': ['out']
-=======
-    '1': [2, 3, 4],
-    '2': [7],
-    '3': [5, 6],
-    '4': [5, 6],
-    '5': [7],
-    '6': [8],
-    '7': [8],
-    '8': ['out']
->>>>>>> develop
     }
 
     # Optuna Hyperparameter Study

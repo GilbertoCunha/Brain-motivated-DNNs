@@ -109,32 +109,7 @@ class RetinaVVSGraph():
 
     @staticmethod
     def cross_entropy_loss(predictions, labels):
-<<<<<<< HEAD
         return F.cross_entropy(predictions, labels)
-=======
-        r = F.cross_entropy(predictions, labels)
-        return r
-
-    def training_step(self, batch, new):
-        start = time.time()
-
-        # Get predictions
-        images, labels = batch
-        predictions = self(images)
-
-        # Get batch metrics
-        accuracy = predictions.argmax(dim=-1).eq(labels).sum().true_divide(predictions.shape[0])
-        loss = self.cross_entropy_loss(predictions, labels)
-
-        # Get train batch output
-        output = {
-            "labels": labels,
-            "predictions": F.softmax(predictions, dim=-1),
-            "loss": loss,
-            "acc": accuracy,
-            "time": time.time() - start
-        }
->>>>>>> develop
 
     def training_step(self, batch, batch_id):
         return RetinaVVS.training_step(self, batch, batch_id)
