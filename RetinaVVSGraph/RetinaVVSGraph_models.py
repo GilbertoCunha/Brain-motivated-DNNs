@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
-import RetinaVVSGraph_class as RetinaVVSG_class
+import RetinaVVSGraph.RetinaVVSGraph_class as RetinaVVSG
 from argparse import ArgumentParser, Namespace
 from torchvision.datasets import CIFAR10
 from torchvision import transforms
@@ -31,9 +31,8 @@ def objective(trial, args, search):
     val_data = DataLoader(val_data, batch_size=params["batch_size"], num_workers=12)
 
     # Create model
-    print(input_shape)
     params["input_shape"] = input_shape
-    model = getattr(RetinaVVSG_class, params["model_class"])(params)
+    model = getattr(RetinaVVSG, params["model_class"])(params)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -42,24 +41,24 @@ def objective(trial, args, search):
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath=f"models",
+        filepath=f"RetinaVVSGraph/models",
         prefix=model.name,
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"logs/", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVSGraph/logs/", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
                                             checkpoint_callback=model_checkpoint, auto_lr_find=False,
-                                            logger=tb_logger, fast_dev_run=True, max_epochs=100)
+                                            logger=tb_logger, fast_dev_run=False, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
     # Save model state dict
     checkpoint = torch.load(model_checkpoint.best_model_path)
     model.load_state_dict(checkpoint["state_dict"])
-    torch.save(model.state_dict(), f"state_dicts/{model.name}.tar")
+    torch.save(model.state_dict(), f"RetinaVVSGraph/state_dicts/{model.name}.tar")
 
     return model_checkpoint.best_model_score
 
@@ -75,11 +74,15 @@ if __name__ == "__main__":
 
     # VVS Network graph
     vvs_graph = {
-    '0': [1, 2, 4],
+    '0': [1],
     '1': [2, 3, 4],
-    '2': [3, 4],
-    '3': [4],
-    '4': ["out"]
+    '2': [7],
+    '3': [5, 6],
+    '4': [5, 6],
+    '5': [7],
+    '6': [8],
+    '7': [8],
+    '8': ['out']
     }
 
     # Optuna Hyperparameter Study
@@ -98,4 +101,4 @@ if __name__ == "__main__":
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"RetinaVVSGraph/studies/{study_name}.h5", key="study")

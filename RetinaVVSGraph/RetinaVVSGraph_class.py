@@ -13,7 +13,7 @@ def channels_graph(g, r_c):
     This function calculates a dictionary of the number of channels each layer
     of the VVS-Network receives according to any connection network determined by 
     the graph 'g'. It assumes that the number of output channels in any layer is 
-    always equal to the number of inputs.
+    always equal to the number of input channels.
 
     Args:
         g (dict): A graph that describes the connections to be made between layers.
@@ -99,16 +99,13 @@ class RetinaVVSGraph(pl.LightningModule):
         # VVS forward pass 
         # TODO: Make the graph allow output_channels!=input_channels
         t_layer_out = [t]
-        print(self.graph)
         for key, conv, bn in zip(self.graph, self.vvs_conv, self.vvs_bn):
             # NOTE: this cycle doesn't pass through the "out" graph node
             # because of the zip function and different argument len
             t = torch.cat([t_layer_out[j] for j in self.graph[key][1]], dim=1)
-            print(f"Key: {key} | Shape: {t.shape[1]} | Conv: {conv.in_channels}")
             t = self.pad(bn(F.relu(conv(t))))
             t_layer_out.append(t)
         t = torch.cat([t_layer_out[j] for j in self.graph["out"][1]], dim=1)
-        print(f"Key: out | Shape: {t.shape[1]} | FC: {self.vvs_fc.in_features}")
         t = t.reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
@@ -122,11 +119,9 @@ class RetinaVVSGraph(pl.LightningModule):
     @staticmethod
     def cross_entropy_loss(predictions, labels):
         r = F.cross_entropy(predictions, labels)
-        print(r.shape)
         return r
 
     def training_step(self, batch, new):
-        print(new)
         start = time.time()
 
         # Get predictions
