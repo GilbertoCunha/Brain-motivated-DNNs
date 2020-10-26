@@ -14,7 +14,7 @@ def channels_graph(g, r_c):
     This function calculates a dictionary of the number of channels each layer
     of the VVS-Network receives according to any connection network determined by 
     the graph 'g'. It assumes that the number of output channels in any layer is 
-    always equal to the number of inputs.
+    always equal to the number of input channels.
 
     Args:
         g (dict): A graph that describes the connections to be made between layers.
@@ -109,7 +109,32 @@ class RetinaVVSGraph():
 
     @staticmethod
     def cross_entropy_loss(predictions, labels):
+<<<<<<< HEAD
         return F.cross_entropy(predictions, labels)
+=======
+        r = F.cross_entropy(predictions, labels)
+        return r
+
+    def training_step(self, batch, new):
+        start = time.time()
+
+        # Get predictions
+        images, labels = batch
+        predictions = self(images)
+
+        # Get batch metrics
+        accuracy = predictions.argmax(dim=-1).eq(labels).sum().true_divide(predictions.shape[0])
+        loss = self.cross_entropy_loss(predictions, labels)
+
+        # Get train batch output
+        output = {
+            "labels": labels,
+            "predictions": F.softmax(predictions, dim=-1),
+            "loss": loss,
+            "acc": accuracy,
+            "time": time.time() - start
+        }
+>>>>>>> develop
 
     def training_step(self, batch, batch_id):
         return RetinaVVS.training_step(self, batch, batch_id)
