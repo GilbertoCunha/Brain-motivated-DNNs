@@ -1,3 +1,4 @@
+from RetinaVVS.RetinaVVS_class import RetinaVVS
 from sklearn.metrics import roc_auc_score
 import pytorch_lightning as pl
 import torch.nn.functional as F
@@ -46,9 +47,9 @@ def channels_graph(g, r_c):
     return r
 
 
-class RetinaVVSGraph(pl.LightningModule):
+class RetinaVVSGraph():
     def __init__(self, hparams):
-        super(RetinaVVSGraph, self).__init__()
+        # super(RetinaVVSGraph, self).__init__(hparams)
 
         # Gather hparams
         input_shape = hparams["input_shape"]
@@ -62,17 +63,9 @@ class RetinaVVSGraph(pl.LightningModule):
         self.graph = channels_graph(graph, ret_channels)
         self.name = f"RetChans{ret_channels}_Graph{graph}"
 
-        # Retina Net
-        self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
-        self.ret_bn1 = nn.BatchNorm2d(num_features=32)
-        self.ret_conv = nn.Conv2d(in_channels=32, out_channels=ret_channels, kernel_size=9)
-        self.ret_bn2 = nn.BatchNorm2d(num_features=ret_channels)
-
         # VVS_Net
         self.vvs_conv = nn.ModuleList()
         self.vvs_bn = nn.ModuleList()
-        # self.vvs_conv.append(nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9))
-        # self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
         for key in self.graph:
             if key != "out":
                 num_channels = self.graph[key][0]
@@ -82,12 +75,9 @@ class RetinaVVSGraph(pl.LightningModule):
         
         # NOTE: This neural network might need more complexity and
         # layers due to the huge ammount of input_features
-        self.vvs_fc = nn.Linear(in_features=features, out_features=1024)
+        self.vvs_fc = nn.Linear(in_features=features, out_features=features//10)
+        self.vvs_fc2 = nn.Linear(in_features=features//10, out_features=1024)
         self.outputs = nn.Linear(in_features=1024, out_features=10)
-
-        # Define Dropout, Padding
-        self.pad = nn.ZeroPad2d(4)
-        self.dropout = nn.Dropout(dropout)
 
     def forward(self, tensor):
         batch_size = tensor.shape[0]
@@ -99,18 +89,16 @@ class RetinaVVSGraph(pl.LightningModule):
         # VVS forward pass 
         # TODO: Make the graph allow output_channels!=input_channels
         t_layer_out = [t]
-        print(self.graph)
         for key, conv, bn in zip(self.graph, self.vvs_conv, self.vvs_bn):
             # NOTE: this cycle doesn't pass through the "out" graph node
             # because of the zip function and different argument len
             t = torch.cat([t_layer_out[j] for j in self.graph[key][1]], dim=1)
-            print(f"Key: {key} | Shape: {t.shape[1]} | Conv: {conv.in_channels}")
             t = self.pad(bn(F.relu(conv(t))))
             t_layer_out.append(t)
         t = torch.cat([t_layer_out[j] for j in self.graph["out"][1]], dim=1)
-        print(f"Key: out | Shape: {t.shape[1]} | FC: {self.vvs_fc.in_features}")
         t = t.reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
+        t = self.dropout(F.relu(self.vvs_fc2(t)))
         t = self.outputs(t)
 
         return t
@@ -121,96 +109,16 @@ class RetinaVVSGraph(pl.LightningModule):
 
     @staticmethod
     def cross_entropy_loss(predictions, labels):
-        r = F.cross_entropy(predictions, labels)
-        print(r.shape)
-        return r
+        return F.cross_entropy(predictions, labels)
 
-    def training_step(self, batch, new):
-        print(new)
-        start = time.time()
-
-        # Get predictions
-        images, labels = batch
-        predictions = self(images)
-
-        # Get batch metrics
-        accuracy = predictions.argmax(dim=-1).eq(labels).sum().true_divide(predictions.shape[0])
-        loss = self.cross_entropy_loss(predictions, labels)
-
-        # Get train batch output
-        output = {
-            "labels": labels,
-            "predictions": F.softmax(predictions, dim=-1),
-            "loss": loss,
-            "acc": accuracy,
-            "time": time.time() - start
-        }
-
-        return output
+    def training_step(self, batch, batch_id):
+        return RetinaVVS.training_step(self, batch, batch_id)
 
     def training_epoch_end(self, outputs):
-        # Get epoch average metrics
-        avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
-        avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
-        total_time = np.stack([batch["time"] for batch in outputs]).sum()
-
-        # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
-        auc = roc_auc_score(labels, predictions, multi_class="ovr")
-
-        # Tensorboard log
-        tensorboard_logs = {
-            "train_loss": avg_loss,
-            "train_acc": avg_acc,
-            "train_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Get returns
-        results = {
-            "train_loss": avg_loss,
-            "log": tensorboard_logs
-        }
-
-        return results
+        return RetinaVVS.training_epoch_end(self, outputs)
 
     def validation_step(self, batch, batch_id):
         return self.training_step(batch, batch_id)
 
     def validation_epoch_end(self, outputs):
-        # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
-        auc = roc_auc_score(labels, predictions, multi_class="ovr")
-
-        # Get epoch average metrics
-        avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
-        avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
-        total_time = np.stack([batch["time"] for batch in outputs]).sum()
-
-        # Progress bar log
-        progress_bar = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc
-        }
-
-        # Tensorboard log
-        tensorboard_logs = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Define return
-        results = {
-            "val_loss": avg_loss,
-            "log": tensorboard_logs,
-            "progress_bar": progress_bar
-        }
-
-        return results
+        return RetinaVVS.validation_epoch_end(self, outputs)

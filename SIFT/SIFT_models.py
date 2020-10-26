@@ -40,24 +40,24 @@ def objective(trial, args, search):
         mode="min"
     )
     model_checkpoint = pl.callbacks.ModelCheckpoint(
-        filepath=f"SIFT/models/{model.filename}",
+        filepath=f"SIFT/models/B-{model.filename}",
         prefix=model.name,
         monitor="val_acc",
         mode="max",
         save_top_k=1
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"SIFT/logs/{model.filename}", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger(f"SIFT/logs/{model.filename}", name="B-" + model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
                                             checkpoint_callback=model_checkpoint, auto_lr_find=True,
-                                            logger=tb_logger, fast_dev_run=False, max_epochs=100)
+                                            logger=tb_logger, fast_dev_run=True, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
     # Save model state dict
     checkpoint = torch.load(model_checkpoint.best_model_path)
     model.load_state_dict(checkpoint["state_dict"])
-    torch.save(model.state_dict(), f"SIFT/state_dicts/{model.filename}/{model.name}.tar")
+    torch.save(model.state_dict(), f"SIFT/state_dicts/{model.filename}/B-{model.name}.tar")
 
     return model_checkpoint.best_model_score
 
@@ -89,4 +89,4 @@ if __name__ == "__main__":
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"SIFT/studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"SIFT/studies/B-{study_name}.h5", key="study")
