@@ -162,7 +162,7 @@ class RetinaVVS(pl.LightningModule):
         # Save models with more than 69% performance
         if avg_acc >= 0.68:
             torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
-            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
+            file = open(f"Best_Models/{model.filename}/{model.name}/parameters.txt", "w")
             if model.filename == "RetinaVVS" or "SIFT" in model.filename:
                 file.write(f"Retina Channels: {self.ret_channels}")
                 file.write(f"VVS Layers: {self.vvs_layers}")

@@ -213,25 +213,15 @@ class RetinaVVSGraph(pl.LightningModule):
             "progress_bar": progress_bar
         }
 
-<<<<<<< HEAD
-=======
-        # Save models with more than 69% performance
->>>>>>> master
-        if avg_acc >= 0.69:
+        # Save models with more than 68% validation accuracy
+        if avg_acc >= 0.68:
             torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
-            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
+            file = open(f"Best_Models/{model.filename}/{model.name}/parameters.txt", "w")
             file.write(f"Retina Channels: {self.ret_channels}")
             file.write(f"Dropout: {self.dropout}")
             file.write(f"Graph: {self.vvs_graph}")
-<<<<<<< HEAD
             file.write(f"\nAccuracy: {avg_acc}")
             file.write(f"ROC AUC: {auc}")
             file.close()
 
         return results
-=======
-            file.write(f"Accuracy: {avg_acc}")
-            file.close()
-
-        return results
->>>>>>> master
