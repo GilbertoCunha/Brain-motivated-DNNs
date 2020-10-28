@@ -61,7 +61,8 @@ class RetinaVVS(pl.LightningModule):
         return t
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        #optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.RMSprop(self.parameters(), lr=self.lr)
         return optimizer
 
     @staticmethod
@@ -154,5 +155,19 @@ class RetinaVVS(pl.LightningModule):
             "log": tensorboard_logs,
             "progress_bar": progress_bar
         }
+
+        # Save models with more than 69% performance
+        if avg_acc >= 0.69:
+            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
+            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
+            if model.filename == "RetinaVVS" or "SIFT" in model.filename:
+                file.write(f"Retina Channels: {self.ret_channels}")
+                file.write(f"VVS Layers: {self.vvs_layers}")
+                file.write(f"Dropout: {self.dropout}")
+                if "SIFT" in model.filename:
+                    file.write(f"Patch Size: {self.patch_size}")
+                file.write(f"\nAccuracy: {avg_acc}")
+                file.write(f"ROC AUC: {auc}")
+            file.close()
 
         return results
