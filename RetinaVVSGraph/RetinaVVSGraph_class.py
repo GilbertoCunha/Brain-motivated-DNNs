@@ -53,13 +53,16 @@ class RetinaVVSGraph(pl.LightningModule):
         # Gather hparams
         input_shape = hparams["input_shape"]
         ret_channels = hparams["ret_channels"]
-        graph = hparams["vvs_graph"]
+        vvs_graph = hparams["vvs_graph"]
         dropout = hparams["dropout"]
         self.lr = hparams["lr"]
         self.filename = hparams["model_class"]
+        self.vvs_graph = vvs_graph
+        self.dropout = dropout
+        self.ret_channels = ret_channels
         
         # Model name
-        self.graph = channels_graph(graph, ret_channels)
+        self.graph = channels_graph(vvs_graph, ret_channels)
         self.name = f"RetChans{ret_channels}_Graph{graph}"
 
         # Retina Net
@@ -71,8 +74,6 @@ class RetinaVVSGraph(pl.LightningModule):
         # VVS_Net
         self.vvs_conv = nn.ModuleList()
         self.vvs_bn = nn.ModuleList()
-        # self.vvs_conv.append(nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9))
-        # self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
         for key in self.graph:
             if key != "out":
                 num_channels = self.graph[key][0]
@@ -97,7 +98,7 @@ class RetinaVVSGraph(pl.LightningModule):
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
 
         # VVS forward pass 
-        # TODO: Make the graph allow output_channels!=input_channels
+        # TODO: Make the graph allow output_channels != input_channels
         t_layer_out = [t]
         for key, conv, bn in zip(self.graph, self.vvs_conv, self.vvs_bn):
             # NOTE: this cycle doesn't pass through the "out" graph node
@@ -207,5 +208,15 @@ class RetinaVVSGraph(pl.LightningModule):
             "log": tensorboard_logs,
             "progress_bar": progress_bar
         }
+
+        # Save models with more than 69% performance
+        if avg_acc >= 0.69:
+            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
+            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
+            file.write(f"Retina Channels: {self.ret_channels}")
+            file.write(f"Dropout: {self.dropout}")
+            file.write(f"Graph: {self.vvs_graph}")
+            file.write(f"Accuracy: {avg_acc}")
+            file.close()
 
         return results

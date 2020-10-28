@@ -33,6 +33,7 @@ class SIFTRetinaStart(RetinaVVS):
         # Gather hparams
         input_shape = hparams["input_shape"]
         patch_size = hparams["patch_size"]
+        self.patch_size = patch_size
 
         # Model identifiers
         self.name += f"_PatchSize{patch_size}"
@@ -66,6 +67,7 @@ class SIFTVVSEnd(RetinaVVS):
         # Gather hparams
         input_shape = hparams["input_shape"]
         patch_size = hparams["patch_size"]
+        self.patch_size = patch_size
 
         # Model Parameters
         self.name += f"_PatchSize{patch_size}"
@@ -99,6 +101,7 @@ class SIFTBoth(RetinaVVS):
         # Gather hparams
         input_shape = hparams["input_shape"]
         patch_size = hparams["patch_size"]
+        self.patch_size = patch_size
 
         # Model Parameters
         self.name += f"_PatchSize{patch_size}"
