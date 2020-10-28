@@ -16,6 +16,9 @@ class RetinaVVS(pl.LightningModule):
         ret_channels = hparams["ret_channels"]
         vvs_layers = hparams["vvs_layers"]
         dropout = hparams["dropout"]
+        self.ret_channels = ret_channels
+        self.vvs_layers = vvs_layers
+        self.dropout = dropout
 
         # Model Parameters
         self.lr = hparams["lr"]

@@ -51,7 +51,7 @@ def objective(trial, args, search):
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
-                                            checkpoint_callback=model_checkpoint, auto_lr_find=False,
+                                            checkpoint_callback=model_checkpoint, auto_lr_find=True,
                                             logger=tb_logger, fast_dev_run=False, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
@@ -75,14 +75,14 @@ if __name__ == "__main__":
     # VVS Network graph
     vvs_graph = {
     '0': [1],
-    '1': [2, 3, 4],
-    '2': [7],
-    '3': [5, 6],
-    '4': [5, 6],
-    '5': [7],
+    '1': [2, 3],
+    '2': [4, 6],
+    '3': [5, 7],
+    '4': [6, 7],
+    '5': [6, 7],
     '6': [8],
     '7': [8],
-    '8': ['out']
+    '8': ["out"]
     }
 
     # Optuna Hyperparameter Study
@@ -101,4 +101,4 @@ if __name__ == "__main__":
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
-    study_df.to_hdf(f"RetinaVVSGraph/studies/{study_name}.h5", key="study")
+    study_df.to_hdf(f"RetinaVVSGraph/studies/RetChans{search_space['ret_channels'][0]}_Graph{vvs_graph}.h5", key="study")
