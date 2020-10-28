@@ -57,6 +57,9 @@ class RetinaVVSGraph(pl.LightningModule):
         dropout = hparams["dropout"]
         self.lr = hparams["lr"]
         self.filename = hparams["model_class"]
+        self.vvs_graph = graph
+        self.dropout = dropout
+        self.ret_channels = ret_channels
         
         # Model name
         self.graph = channels_graph(graph, ret_channels)
@@ -207,5 +210,14 @@ class RetinaVVSGraph(pl.LightningModule):
             "log": tensorboard_logs,
             "progress_bar": progress_bar
         }
+
+        if avg_acc >= 0.69:
+            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
+            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
+            file.write(f"Retina Channels: {self.ret_channels}")
+            file.write(f"Dropout: {self.dropout}")
+            file.write(f"Graph: {self.vvs_graph}")
+            file.write(f"Accuracy: {avg_acc}")
+            file.close()
 
         return results
