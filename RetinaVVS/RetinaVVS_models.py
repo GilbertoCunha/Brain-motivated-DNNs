@@ -77,7 +77,7 @@ if __name__ == "__main__":
         'batch_size': [32],
         'ret_channels': [32],
         'vvs_layers': [4],
-        'dropout': [0.0],
+        'dropout': [0.08],
         'model_class': ["RetinaVVS"]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))

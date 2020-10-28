@@ -61,8 +61,8 @@ class RetinaVVS(pl.LightningModule):
         return t
 
     def configure_optimizers(self):
-        #optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        optimizer = torch.optim.RMSprop(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        #optimizer = torch.optim.RMSprop(self.parameters(), lr=self.lr)
         return optimizer
 
     @staticmethod
@@ -157,7 +157,7 @@ class RetinaVVS(pl.LightningModule):
         }
 
         # Save models with more than 69% performance
-        if avg_acc >= 0.69:
+        if avg_acc >= 0.68:
             torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
             file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
             if model.filename == "RetinaVVS" or "SIFT" in model.filename:
