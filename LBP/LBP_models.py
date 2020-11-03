@@ -1,10 +1,10 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
 from torchvision.datasets import CIFAR10
+import LBP.LBP_classes as LBP_classes
 from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
-import LBP.LBP_classes as LBP_classes
 from functools import reduce
 import pandas as pd
 import optuna
@@ -17,14 +17,13 @@ if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
     parser.add_argument("--model_class", type=str, default="LBPVVSEnd")
-    parser.add_argument("--study_name", type=str, default="test")
     parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
     args = parser.parse_args()
 
     # Optuna Hyperparameter Study
     hparams = {
-        'model_class': [parser_args.model_class],
+        'model_class': parser_args.model_class,
         'batch_size': 32,
         'ret_channels': 32,
         'vvs_layers': 4,

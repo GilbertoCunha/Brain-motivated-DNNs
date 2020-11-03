@@ -15,13 +15,11 @@ if __name__ == "__main__":
 
     # Terminal Arguments
     parser = ArgumentParser()
-    parser.add_argument("--n_trials", type=int, default=1)
     parser.add_argument("--es_patience", type=int, default=8)
     parser.add_argument("--gpus", type=int, default=1)
-    parser.add_argument("--study_name", type=str, default="test")
     args = parser.parse_args()
 
-    # Optuna Hyperparameter Study
+    # Model hyperparameters
     hparams = {
         'batch_size': 32,
         'ret_channels': 32,

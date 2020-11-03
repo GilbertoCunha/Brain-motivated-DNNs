@@ -1,6 +1,7 @@
 from sklearn.metrics import roc_auc_score
-import pytorch_lightning as pl
 import torch.nn.functional as F
+import pytorch_lightning as pl
+from pathlib import Path
 import torch.nn as nn
 import numpy as np
 import torch
@@ -19,7 +20,7 @@ class RetinaVVS(pl.LightningModule):
         dropout = hparams["dropout"]
         self.ret_channels = ret_channels
         self.vvs_layers = vvs_layers
-        self.dropout = dropout
+        self.drop = dropout
 
         # Model Parameters
         self.lr = hparams["lr"]
