@@ -215,8 +215,8 @@ class RetinaVVSGraph(pl.LightningModule):
         self.avg_acc.append(avg_acc)
         if avg_acc >= max(self.avg_acc):
             Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
-            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
-            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
+            torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
+            file = open(f"Best_Models/{self.filename}/{self.name}/graph.txt", "w")
             file.write(f"Retina Channels: {self.ret_channels}")
             file.write(f"Dropout: {self.dropout}")
             file.write(f"Graph: {self.vvs_graph}")
