@@ -163,20 +163,21 @@ class RetinaVVS(pl.LightningModule):
         # Save best model
         self.avg_acc.append(avg_acc)
         if avg_acc >= max(self.avg_acc):
+            Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
             torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
-            file = open(f"Best_Models/{self.filename}/{self.name}/graph.txt", "w")
-            if self.filename == "RetinaVVS" or "SIFT" in model.filename:
-                file.write(f"Retina Channels: {self.ret_channels}")
-                file.write(f"VVS Layers: {self.vvs_layers}")
-                file.write(f"Dropout: {self.dropout}")
-                if "SIFT" in model.filename:
-                    file.write(f"Patch Size: {self.patch_size}")
-                if "LBP" in model.filename:
+            file = open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w")
+            if self.filename == "RetinaVVS" or "SIFT" in self.filename:
+                file.write(f"Retina Channels: {self.ret_channels}\n")
+                file.write(f"VVS Layers: {self.vvs_layers}\n")
+                file.write(f"Dropout: {self.drop}\n")
+                if "SIFT" in self.filename:
+                    file.write(f"Patch Size: {self.patch_size}\n")
+                if "LBP" in self.filename:
                     file.write(f"Out Channels: {self.out_channels}")
-                    file.write(f"Sparsity: {self.sparsity}")
                     file.write(f"Kernel Size: {self.kernel_size}")
-                file.write(f"\nAccuracy: {avg_acc}")
-                file.write(f"ROC AUC: {auc}")
+                    file.write(f"Sparsity: {self.sparsity}")
+                file.write(f"\nAccuracy: {avg_acc}\n")
+                file.write(f"ROC AUC: {auc}\n")
             file.close()
 
         return results
