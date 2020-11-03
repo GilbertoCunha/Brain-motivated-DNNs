@@ -9,6 +9,7 @@ import pandas as pd
 import optuna
 import torch
 
+torch.manual_seed(1)
 
 def objective(trial, args, search):
     # Optuna trial parameters
@@ -51,7 +52,7 @@ def objective(trial, args, search):
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
                                             checkpoint_callback=model_checkpoint, auto_lr_find=True,
-                                            logger=tb_logger, fast_dev_run=True, max_epochs=100)
+                                            logger=tb_logger, fast_dev_run=False, max_epochs=100)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
     # Save model state dict
@@ -79,7 +80,7 @@ if __name__ == "__main__":
         'batch_size': [32],
         'ret_channels': [32],
         'vvs_layers': [4],
-        'dropout': [0.0],
+        'dropout': [0.05],
         'patch_size': [8]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))

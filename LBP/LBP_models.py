@@ -1,15 +1,16 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
 from torchvision.datasets import CIFAR10
+import LBP.LBP_classes as LBP_classes
 from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
-import LBP.LBP_classes as LBP_classes
 from functools import reduce
 import pandas as pd
 import optuna
 import torch
 
+torch.manual_seed(1)
 
 def objective(trial, args, search):
     # Optuna trial parameters

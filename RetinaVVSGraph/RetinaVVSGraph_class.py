@@ -2,6 +2,7 @@ from sklearn.metrics import roc_auc_score
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from math import factorial
+from pathlib import Path
 import torch.nn as nn
 import numpy as np
 import torch
@@ -57,17 +58,14 @@ class RetinaVVSGraph(pl.LightningModule):
         dropout = hparams["dropout"]
         self.lr = hparams["lr"]
         self.filename = hparams["model_class"]
-<<<<<<< HEAD
-        self.vvs_graph = graph
-=======
         self.vvs_graph = vvs_graph
->>>>>>> master
-        self.dropout = dropout
+        self.drop = dropout
         self.ret_channels = ret_channels
+        self.avg_acc = []
         
         # Model name
         self.graph = channels_graph(vvs_graph, ret_channels)
-        self.name = f"RetChans{ret_channels}_Graph{graph}"
+        self.name = f"RetChans{ret_channels}_Graph{vvs_graph}"
 
         # Retina Net
         self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
@@ -214,14 +212,16 @@ class RetinaVVSGraph(pl.LightningModule):
         }
 
         # Save models with more than 68% validation accuracy
-        if avg_acc >= 0.68:
-            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
-            file = open(f"Best_Models/{model.filename}/{model.name}/parameters.txt", "w")
-            file.write(f"Retina Channels: {self.ret_channels}")
-            file.write(f"Dropout: {self.dropout}")
-            file.write(f"Graph: {self.vvs_graph}")
-            file.write(f"\nAccuracy: {avg_acc}")
-            file.write(f"ROC AUC: {auc}")
+        self.avg_acc.append(avg_acc)
+        if avg_acc >= max(self.avg_acc):
+            Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
+            torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
+            file = open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w")
+            file.write(f"Retina Channels: {self.ret_channels}\n")
+            file.write(f"Dropout: {self.drop}\n")
+            file.write(f"Graph: {self.vvs_graph}\n")
+            file.write(f"\nAccuracy: {avg_acc}\n")
+            file.write(f"ROC AUC: {auc}\n")
             file.close()
 
         return results

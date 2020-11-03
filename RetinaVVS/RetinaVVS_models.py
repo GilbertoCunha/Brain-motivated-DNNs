@@ -9,6 +9,7 @@ import pandas as pd
 import optuna
 import torch
 
+torch.manual_seed(1)
 
 def objective(trial, args, search):
     # Optuna trial parameters
@@ -25,7 +26,7 @@ def objective(trial, args, search):
     val_size = int(0.2 * len(train_data))
     train_size = len(train_data) - val_size
     train_data, val_data = random_split(train_data, [train_size, val_size],
-                                        generator=torch.Generator().manual_seed(trial.number))
+                                        generator=torch.Generator().manual_seed(trial.number+42))
     train_data = DataLoader(train_data, batch_size=params["batch_size"], shuffle=True, num_workers=12)
     val_data = DataLoader(val_data, batch_size=params["batch_size"], num_workers=12)
 
@@ -77,7 +78,7 @@ if __name__ == "__main__":
         'batch_size': [32],
         'ret_channels': [32],
         'vvs_layers': [4],
-        'dropout': [0.1],
+        'dropout': [0.0],
         'model_class': ["RetinaVVS"]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))

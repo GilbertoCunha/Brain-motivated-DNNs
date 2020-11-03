@@ -9,6 +9,7 @@ import pandas as pd
 import optuna
 import torch
 
+torch.manual_seed(1)
 
 def objective(trial, args, search):
     # Optuna trial parameters
@@ -67,7 +68,7 @@ if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
     parser.add_argument("--n_trials", type=int, default=1)
-    parser.add_argument("--es_patience", type=int, default=3)
+    parser.add_argument("--es_patience", type=int, default=5)
     parser.add_argument("--gpus", type=int, default=1)
     parser.add_argument("--study_name", type=str, default="test")
     parser_args = parser.parse_args()
@@ -76,7 +77,7 @@ if __name__ == "__main__":
     vvs_graph = {
     '0': [1],
     '1': [2, 3],
-    '2': [4, 6],
+    '2': [4, 7],
     '3': [5, 7],
     '4': [6, 7],
     '5': [6, 7],

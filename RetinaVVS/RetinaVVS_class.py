@@ -1,6 +1,7 @@
 from sklearn.metrics import roc_auc_score
 import pytorch_lightning as pl
 import torch.nn.functional as F
+from pathlib import Path
 import torch.nn as nn
 import numpy as np
 import torch
@@ -18,7 +19,8 @@ class RetinaVVS(pl.LightningModule):
         dropout = hparams["dropout"]
         self.ret_channels = ret_channels
         self.vvs_layers = vvs_layers
-        self.dropout = dropout
+        self.drop = dropout
+        self.avg_acc = []
 
         # Model Parameters
         self.lr = hparams["lr"]
@@ -160,17 +162,19 @@ class RetinaVVS(pl.LightningModule):
         }
 
         # Save models with more than 69% performance
-        if avg_acc >= 0.68:
-            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
-            file = open(f"Best_Models/{model.filename}/{model.name}/parameters.txt", "w")
-            if model.filename == "RetinaVVS" or "SIFT" in model.filename:
-                file.write(f"Retina Channels: {self.ret_channels}")
-                file.write(f"VVS Layers: {self.vvs_layers}")
-                file.write(f"Dropout: {self.dropout}")
-                if "SIFT" in model.filename:
-                    file.write(f"Patch Size: {self.patch_size}")
-                file.write(f"\nAccuracy: {avg_acc}")
-                file.write(f"ROC AUC: {auc}")
+        self.avg_acc.append(avg_acc)
+        if avg_acc >= max(self.avg_acc):
+            Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
+            torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
+            file = open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w")
+            if self.filename == "RetinaVVS" or "SIFT" in self.filename:
+                file.write(f"Retina Channels: {self.ret_channels}\n")
+                file.write(f"VVS Layers: {self.vvs_layers}\n")
+                file.write(f"Dropout: {self.drop}\n")
+                if "SIFT" in self.filename:
+                    file.write(f"Patch Size: {self.patch_size}\n")
+                file.write(f"\nAccuracy: {avg_acc}\n")
+                file.write(f"ROC AUC: {auc}\n")
             file.close()
 
         return results
