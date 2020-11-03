@@ -161,7 +161,7 @@ class RetinaVVS(pl.LightningModule):
             "progress_bar": progress_bar
         }
 
-        # Save models with more than 69% performance
+        # Save best model
         self.avg_acc.append(avg_acc)
         if avg_acc >= max(self.avg_acc):
             Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
@@ -173,6 +173,10 @@ class RetinaVVS(pl.LightningModule):
                 file.write(f"Dropout: {self.drop}\n")
                 if "SIFT" in self.filename:
                     file.write(f"Patch Size: {self.patch_size}\n")
+                if "LBP" in self.filename:
+                    file.write(f"Out Channels: {self.out_channels}")
+                    file.write(f"Kernel Size: {self.kernel_size}")
+                    file.write(f"Sparsity: {self.sparsity}")
                 file.write(f"\nAccuracy: {avg_acc}\n")
                 file.write(f"ROC AUC: {auc}\n")
             file.close()

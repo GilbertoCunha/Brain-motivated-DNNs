@@ -9,7 +9,8 @@ import pandas as pd
 import optuna
 import torch
 
-torch.manual_seed(1)
+# Manual seeding
+pl.seed_everything(42)
 
 def objective(trial, args, search):
     # Optuna trial parameters
@@ -52,13 +53,14 @@ def objective(trial, args, search):
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop, num_sanity_val_steps=0,
                                             checkpoint_callback=model_checkpoint, auto_lr_find=True,
-                                            logger=tb_logger, fast_dev_run=False, max_epochs=100)
+                                            logger=tb_logger, fast_dev_run=False, max_epochs=100,
+                                            deterministic=True)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
 
     # Save model state dict
-    checkpoint = torch.load(model_checkpoint.best_model_path)
-    model.load_state_dict(checkpoint["state_dict"])
-    torch.save(model.state_dict(), f"RetinaVVS/state_dicts/{model.name}.tar")
+    # checkpoint = torch.load(model_checkpoint.best_model_path)
+    # model.load_state_dict(checkpoint["state_dict"])
+    # torch.save(model.state_dict(), f"RetinaVVS/state_dicts/{model.name}.tar")
 
     return model_checkpoint.best_model_score
 
@@ -67,7 +69,7 @@ if __name__ == "__main__":
     # Terminal Arguments
     parser = ArgumentParser()
     parser.add_argument("--n_trials", type=int, default=1)
-    parser.add_argument("--es_patience", type=int, default=8)
+    parser.add_argument("--es_patience", type=int, default=5)
     parser.add_argument("--gpus", type=int, default=1)
     parser.add_argument("--study_name", type=str, default="test")
     parser_args = parser.parse_args()
@@ -78,14 +80,16 @@ if __name__ == "__main__":
         'batch_size': [32],
         'ret_channels': [32],
         'vvs_layers': [4],
-        'dropout': [0.0],
+        'dropout': [0.05],
         'model_class': ["RetinaVVS"]
     }
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.GridSampler(search_space))
     study.optimize(lambda trials: objective(trials, parser_args, search_space), n_trials=parser_args.n_trials)
 
+    """
     # Process study dataframe
     study_df = study.trials_dataframe()
     study_df.rename(columns={"value": "val_acc", "number": "trial"}, inplace=True)
     study_df.drop(["datetime_start", "datetime_complete"], axis=1, inplace=True)
     study_df.to_hdf(f"RetinaVVS/studies/{study_name}.h5", key="study")
+    """

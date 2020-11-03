@@ -29,6 +29,9 @@ class LBPRetinaStart(RetinaVVS):
         out_channels = hparams["out_channels"]
         kernel_size = hparams["kernel_size"]
         sparsity = hparams["sparsity"]
+        self.sparsity = sparsity
+        self.kernel_size = kernel_size
+        self.out_channels = out_channels
 
         # Model identifiers
         self.name += f"_OutChans{out_channels}_Kernel{kernel_size}_Spars{sparsity}"
