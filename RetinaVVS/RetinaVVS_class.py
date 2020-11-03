@@ -10,6 +10,7 @@ import time
 class RetinaVVS(pl.LightningModule):
     def __init__(self, hparams):
         super(RetinaVVS, self).__init__()
+        self.avg_acc = []
 
         # Gather hparams
         input_shape = hparams["input_shape"]
@@ -159,16 +160,21 @@ class RetinaVVS(pl.LightningModule):
             "progress_bar": progress_bar
         }
 
-        # Save models with more than 69% performance
-        if avg_acc >= 0.68:
-            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
-            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
-            if model.filename == "RetinaVVS" or "SIFT" in model.filename:
+        # Save best model
+        self.avg_acc.append(avg_acc)
+        if avg_acc >= max(self.avg_acc):
+            torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
+            file = open(f"Best_Models/{self.filename}/{self.name}/graph.txt", "w")
+            if self.filename == "RetinaVVS" or "SIFT" in model.filename:
                 file.write(f"Retina Channels: {self.ret_channels}")
                 file.write(f"VVS Layers: {self.vvs_layers}")
                 file.write(f"Dropout: {self.dropout}")
                 if "SIFT" in model.filename:
                     file.write(f"Patch Size: {self.patch_size}")
+                if "LBP" in model.filename:
+                    file.write(f"Out Channels: {self.out_channels}")
+                    file.write(f"Sparsity: {self.sparsity}")
+                    file.write(f"Kernel Size: {self.kernel_size}")
                 file.write(f"\nAccuracy: {avg_acc}")
                 file.write(f"ROC AUC: {auc}")
             file.close()
