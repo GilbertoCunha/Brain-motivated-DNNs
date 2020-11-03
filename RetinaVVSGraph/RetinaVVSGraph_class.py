@@ -1,6 +1,7 @@
 from sklearn.metrics import roc_auc_score
-import torch.nn.functional as F
 import pytorch_lightning as pl
+import torch.nn.functional as F
+from math import factorial
 from pathlib import Path
 import torch.nn as nn
 import numpy as np
@@ -8,24 +9,63 @@ import torch
 import time
 
 
-class RetinaVVS(pl.LightningModule):
+def channels_graph(g, r_c):
+    """
+    This function calculates a dictionary of the number of channels each layer
+    of the VVS-Network receives according to any connection network determined by 
+    the graph 'g'. It assumes that the number of output channels in any layer is 
+    always equal to the number of input channels.
+
+    Args:
+        g (dict): A graph that describes the connections to be made between layers.
+        It should be constructed the following way:
+            1 - The keys are 'str(i)' where 'i' is the layer number
+            2 - The key "out" corresponds to the output of the vvs_network
+            3 - The values 'g[str(i)]' are lists '[j]' where the layer 'g[str(j)]'
+            has a connection coming from layer 'g[str(i)]'
+        r_c (int): The number of channels that leave the Retina Network
+
+    Returns:
+        dict: dictionary with the connections and the number of input channels
+        for each graph. The output graph keys are the same, but its values are
+        now tuples '(a, [b])' such that:
+            - g[key][0]=a are the number of channels that enter the layer 'key'
+            - g[key][2]=[b] are all the layers 'b' that connect to channel 'key'
+    """
+    
+    # Calculate the channels for each layer
+    r, values = {}, [r_c]
+    for i in range(1, len(list(g.keys()))):
+        indexes = [int(key) for key in g if i in g[key]]
+        r[str(i)] = (sum([values[j] for j in indexes]), indexes)
+        values.append(r[str(i)][0])
+        
+    # Calculate the output channels and connections
+    indexes = [int(key) for key in g if "out" in g[key]]
+    r["out"] = (sum([values[j] for j in indexes]), indexes)
+        
+    return r
+
+
+class RetinaVVSGraph(pl.LightningModule):
     def __init__(self, hparams):
-        super(RetinaVVS, self).__init__()
+        super(RetinaVVSGraph, self).__init__()
         self.avg_acc = []
 
         # Gather hparams
         input_shape = hparams["input_shape"]
         ret_channels = hparams["ret_channels"]
-        vvs_layers = hparams["vvs_layers"]
+        vvs_graph = hparams["vvs_graph"]
         dropout = hparams["dropout"]
-        self.ret_channels = ret_channels
-        self.vvs_layers = vvs_layers
-        self.drop = dropout
-
-        # Model Parameters
         self.lr = hparams["lr"]
         self.filename = hparams["model_class"]
-        self.name = f"RetChans{ret_channels}_VVSLayers{vvs_layers}"
+        self.vvs_graph = vvs_graph
+        self.dropout = dropout
+        self.ret_channels = ret_channels
+        
+        # Model name
+        self.graph = channels_graph(vvs_graph, ret_channels)
+        self.name = f"RetChans{ret_channels}_Graph{vvs_graph}"
 
         # Retina Net
         self.inputs = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=9)
@@ -36,12 +76,15 @@ class RetinaVVS(pl.LightningModule):
         # VVS_Net
         self.vvs_conv = nn.ModuleList()
         self.vvs_bn = nn.ModuleList()
-        self.vvs_conv.append(nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9))
-        self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        for _ in range(vvs_layers-1):
-            self.vvs_conv.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=9))
-            self.vvs_bn.append(nn.BatchNorm2d(num_features=32))
-        features = 32 * input_shape[1] * input_shape[2]
+        for key in self.graph:
+            if key != "out":
+                num_channels = self.graph[key][0]
+                self.vvs_conv.append(nn.Conv2d(in_channels=num_channels, out_channels=num_channels, kernel_size=9))
+                self.vvs_bn.append(nn.BatchNorm2d(num_features=num_channels))
+        features = self.graph["out"][0] * input_shape[1] * input_shape[2]
+        
+        # NOTE: This neural network might need more complexity and
+        # layers due to the huge ammount of input_features
         self.vvs_fc = nn.Linear(in_features=features, out_features=1024)
         self.outputs = nn.Linear(in_features=1024, out_features=10)
 
@@ -56,9 +99,16 @@ class RetinaVVS(pl.LightningModule):
         t = self.pad(self.ret_bn1(F.relu(self.inputs(tensor))))
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
 
-        # VVS forward pass
-        for conv, bn in zip(self.vvs_conv, self.vvs_bn):
+        # VVS forward pass 
+        # TODO: Make the graph allow output_channels != input_channels
+        t_layer_out = [t]
+        for key, conv, bn in zip(self.graph, self.vvs_conv, self.vvs_bn):
+            # NOTE: this cycle doesn't pass through the "out" graph node
+            # because of the zip function and different argument len
+            t = torch.cat([t_layer_out[j] for j in self.graph[key][1]], dim=1)
             t = self.pad(bn(F.relu(conv(t))))
+            t_layer_out.append(t)
+        t = torch.cat([t_layer_out[j] for j in self.graph["out"][1]], dim=1)
         t = t.reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
@@ -67,14 +117,14 @@ class RetinaVVS(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        #optimizer = torch.optim.RMSprop(self.parameters(), lr=self.lr)
         return optimizer
 
     @staticmethod
     def cross_entropy_loss(predictions, labels):
-        return F.cross_entropy(predictions, labels)
+        r = F.cross_entropy(predictions, labels)
+        return r
 
-    def training_step(self, batch, batch_id):
+    def training_step(self, batch, new):
         start = time.time()
 
         # Get predictions
@@ -161,24 +211,17 @@ class RetinaVVS(pl.LightningModule):
             "progress_bar": progress_bar
         }
 
-        # Save best model
+        # Save models with more than 69% performance
         self.avg_acc.append(avg_acc)
         if avg_acc >= max(self.avg_acc):
             Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
-            torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
-            file = open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w")
-            if self.filename == "RetinaVVS" or "SIFT" in self.filename:
-                file.write(f"Retina Channels: {self.ret_channels}\n")
-                file.write(f"VVS Layers: {self.vvs_layers}\n")
-                file.write(f"Dropout: {self.drop}\n")
-                if "SIFT" in self.filename:
-                    file.write(f"Patch Size: {self.patch_size}\n")
-                if "LBP" in self.filename:
-                    file.write(f"Out Channels: {self.out_channels}")
-                    file.write(f"Kernel Size: {self.kernel_size}")
-                    file.write(f"Sparsity: {self.sparsity}")
-                file.write(f"\nAccuracy: {avg_acc}\n")
-                file.write(f"ROC AUC: {auc}\n")
+            torch.save(model.state_dict(), f"Best_Models/{model.filename}/{model.name}/weights.tar")
+            file = open(f"Best_Models/{model.filename}/{model.name}/graph.txt", "w")
+            file.write(f"Retina Channels: {self.ret_channels}")
+            file.write(f"Dropout: {self.dropout}")
+            file.write(f"Graph: {self.vvs_graph}")
+            file.write(f"\nAccuracy: {avg_acc}")
+            file.write(f"ROC AUC: {auc}")
             file.close()
 
         return results

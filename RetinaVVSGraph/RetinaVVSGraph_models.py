@@ -1,11 +1,10 @@
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
+import RetinaVVSGraph.RetinaVVSGraph_class as RetinaVVSG
+from argparse import ArgumentParser, Namespace
 from torchvision.datasets import CIFAR10
-import LBP.LBP_classes as LBP_classes
-from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
-from functools import reduce
 import pandas as pd
 import optuna
 import torch
@@ -16,21 +15,30 @@ if __name__ == "__main__":
 
     # Terminal Arguments
     parser = ArgumentParser()
-    parser.add_argument("--model_class", type=str, default="LBPVVSEnd")
     parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
     args = parser.parse_args()
 
-    # Optuna Hyperparameter Study
+    # VVS Network graph
+    vvs_graph = {
+    '0': [1],
+    '1': [2, 3],
+    '2': [4, 6],
+    '3': [5, 7],
+    '4': [6, 7],
+    '5': [6, 7],
+    '6': [8],
+    '7': [8],
+    '8': ["out"]
+    }
+
+    # Model hyperparameters
     hparams = {
-        'model_class': parser_args.model_class,
         'batch_size': 32,
         'ret_channels': 32,
-        'vvs_layers': 4,
-        'dropout': 0.05,
-        'out_channels': 8,
-        'kernel_size': 9,
-        'sparsity': 0.8
+        'dropout': 0.0,
+        'model_class': "RetinaVVSGraph",
+        'lr': 1e-3
     }
 
     # Train and validation dataloaders
@@ -48,7 +56,7 @@ if __name__ == "__main__":
 
     # Create model
     hparams["input_shape"] = input_shape
-    model = getattr(LBP_classes, hparams["model_class"])(hparams)
+    model = getattr(RetinaVVSG, hparams["model_class"])(hparams)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -56,7 +64,7 @@ if __name__ == "__main__":
         patience=args.es_patience,
         mode="min"
     )
-    tb_logger = pl_loggers.TensorBoardLogger(f"LBP/logs/{model.filename}", name=model.name)
+    tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVSGraph/logs/", name=model.name)
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, deterministic=True, early_stop_callback=early_stop,
