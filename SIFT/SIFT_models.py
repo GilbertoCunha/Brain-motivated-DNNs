@@ -6,8 +6,6 @@ from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
 import pandas as pd
-import optuna
-import torch
 
 if __name__ == "__main__":
     # Manual seeding
@@ -15,6 +13,10 @@ if __name__ == "__main__":
 
     # Terminal Arguments
     parser = ArgumentParser()
+    parser.add_argument('--no-auto_lr_find', dest='auto_lr_find', action='store_false')
+    parser.set_defaults(auto_lr_find=True)
+    parser.add_argument('--fast_dev_run', dest='fast_dev_run', action='store_true')
+    parser.set_defaults(fast_dev_run=False)
     parser.add_argument("--model_class", type=str, default="SIFTRetinaStart")
     parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
@@ -57,6 +59,6 @@ if __name__ == "__main__":
     tb_logger = pl_loggers.TensorBoardLogger(f"SIFT/logs/{model.filename}", name=model.name)
 
     # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, deterministic=True, early_stop_callback=early_stop,
-                                            auto_lr_find=True, logger=tb_logger, fast_dev_run=True)
+    trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop,
+                                            deterministic=True, logger=tb_logger)
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
