@@ -5,7 +5,6 @@ import LBP.LBP_classes as LBP_classes
 from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
-import pandas as pd
 
 if __name__ == "__main__":
     # Manual seeding
@@ -17,7 +16,7 @@ if __name__ == "__main__":
     parser.set_defaults(auto_lr_find=True)
     parser.add_argument('--fast_dev_run', dest='fast_dev_run', action='store_true')
     parser.set_defaults(fast_dev_run=False)
-    parser.add_argument("--model_class", type=str, default="LBPVVSEnd")
+    parser.add_argument("--model_class", type=str, default="LBPRetinaStart")
     parser.add_argument("--es_patience", type=int, default=3)
     parser.add_argument("--gpus", type=int, default=1)
     args = parser.parse_args()
@@ -62,5 +61,6 @@ if __name__ == "__main__":
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop,
-                                            deterministic=True, logger=tb_logger)
+                                            deterministic=True, logger=tb_logger,
+                                            default_root_dir="Models/")
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
