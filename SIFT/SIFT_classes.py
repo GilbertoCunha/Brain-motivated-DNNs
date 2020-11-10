@@ -50,6 +50,7 @@ class SIFTRetinaStart(RetinaVVS):
         batch_size = tensor.shape[0]
 
         # Apply sift
+        # MODIFICAR A ENTRADA DA SIFT PARA DEPOIS DA CAMADA RETINA
         sift_t = self.sift(tensor).reshape(batch_size, -1)
         sift_t = self.dropout(F.relu(self.sift_fc(sift_t)))
 
