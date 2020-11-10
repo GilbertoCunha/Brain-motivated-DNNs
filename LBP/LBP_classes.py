@@ -66,7 +66,6 @@ class LBPVVSEnd(RetinaVVS):
         super(LBPVVSEnd, self).__init__(hparams)
 
         # Gather hparams
-        input_shape = hparams["input_shape"]
         out_channels = hparams["out_channels"]
         kernel_size = hparams["kernel_size"]
         sparsity = hparams["sparsity"]
@@ -102,7 +101,6 @@ class LBPBoth(RetinaVVS):
         super(LBPBoth, self).__init__(hparams)
 
         # Gather hparams
-        input_shape = hparams["input_shape"]
         out_channels = hparams["out_channels"]
         kernel_size = hparams["kernel_size"]
         sparsity = hparams["sparsity"]

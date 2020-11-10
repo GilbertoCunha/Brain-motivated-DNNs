@@ -5,7 +5,6 @@ from torchvision.datasets import CIFAR10
 from argparse import ArgumentParser
 from torchvision import transforms
 import pytorch_lightning as pl
-import pandas as pd
 
 if __name__ == "__main__":
     # Manual seeding
