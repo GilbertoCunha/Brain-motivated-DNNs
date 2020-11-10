@@ -20,7 +20,6 @@ if __name__ == "__main__":
     parser.add_argument("--es_patience", type=int, default=8)
     parser.add_argument("--gpus", type=int, default=1)
     args = parser.parse_args()
-    print(args)
 
     # Model hyperparameters
     hparams = {
