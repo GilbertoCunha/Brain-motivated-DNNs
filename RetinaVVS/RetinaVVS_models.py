@@ -59,5 +59,6 @@ if __name__ == "__main__":
 
     # Train the model
     trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop,
-                                            deterministic=True, logger=tb_logger)
+                                            deterministic=True, logger=tb_logger,
+                                            default_root_dir="Models/")
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
