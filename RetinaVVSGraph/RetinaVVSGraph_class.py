@@ -75,14 +75,14 @@ class RetinaVVSGraph(pl.LightningModule):
         # VVS_Net
         self.vvs_conv = nn.ModuleList()
         self.vvs_bn = nn.ModuleList()
-        self.vvs_tweeker = {}
+        self.vvs_1x1 = {}
         for key in self.graph:
             if key != "out":
                 num_channels = self.graph[key][0]
                 self.vvs_conv.append(nn.Conv2d(in_channels=num_channels, out_channels=num_channels, kernel_size=9))
                 self.vvs_bn.append(nn.BatchNorm2d(num_features=num_channels))
                 for value in self.vvs_graph[key]:
-                    self.vvs_tweeker[key,str(value)] = nn.Conv2d(in_channels=num_channels, out_channels=num_channels, kernel_size=1)
+                    self.vvs_1x1[key,str(value)] = nn.Conv2d(in_channels=num_channels, out_channels=num_channels, kernel_size=1)
         features = self.graph["out"][0] * input_shape[1] * input_shape[2]
         
         # NOTE: This neural network might need more complexity and
@@ -109,7 +109,10 @@ class RetinaVVSGraph(pl.LightningModule):
             # because of the zip function and different argument len
             t_list = [t_layer_out[j] for j in self.graph[key][1]]
             for j in self.graph[key][1]:
-                t_list.append(self.vvs_tweeker[str(j),key](t_layer_out[j]))
+                print("\n")
+                print((str(j),key) in self.vvs_1x1)
+                print("\n")
+                t_list.append(self.vvs_1x1[str(j),key](t_layer_out[j]))
             t = torch.cat(t_list, dim=1)
             t = self.pad(bn(F.relu(conv(t))))
             t_layer_out.append(t)
@@ -161,23 +164,13 @@ class RetinaVVSGraph(pl.LightningModule):
         labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
         predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
-
-        # Tensorboard log
-        tensorboard_logs = {
-            "train_loss": avg_loss,
-            "train_acc": avg_acc,
-            "train_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Get returns
-        results = {
-            "train_loss": avg_loss,
-            "log": tensorboard_logs
-        }
-
-        return results
+        
+        # Log to tensorboard
+        self.log("train_loss", avg_loss)
+        self.log("train_acc", avg_acc)
+        self.log("train_auc", auc)
+        self.log("epoch_duration", total_time)
+        self.log("step", self.current_epoch)
 
     def validation_step(self, batch, batch_id):
         return self.training_step(batch, batch_id)
@@ -192,29 +185,11 @@ class RetinaVVSGraph(pl.LightningModule):
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
         avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
-
-        # Progress bar log
-        progress_bar = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc
-        }
-
-        # Tensorboard log
-        tensorboard_logs = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Define return
-        results = {
-            "val_loss": avg_loss,
-            "log": tensorboard_logs,
-            "progress_bar": progress_bar
-        }
+        
+        # Log to tensorboard and prog_bar
+        self.log("val_loss", avg_loss, prog_bar=True)
+        self.log("val_acc", avg_acc, prog_bar=True)
+        self.log("val_auc", auc, prog_bar=True)
 
         # Save models with more than 69% performance
         self.avg_acc.append(avg_acc)
@@ -228,5 +203,3 @@ class RetinaVVSGraph(pl.LightningModule):
             file.write(f"\nAccuracy: {avg_acc}")
             file.write(f"ROC AUC: {auc}")
             file.close()
-
-        return results

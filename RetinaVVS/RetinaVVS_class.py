@@ -102,63 +102,35 @@ class RetinaVVS(pl.LightningModule):
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
 
         # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
+        labels = np.concatenate([batch["labels"].detach().cpu().numpy() for batch in outputs])
+        predictions = np.concatenate([batch["predictions"].detach().cpu().numpy() for batch in outputs])
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
-        # Tensorboard log
-        tensorboard_logs = {
-            "train_loss": avg_loss,
-            "train_acc": avg_acc,
-            "train_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Get returns
-        results = {
-            "train_loss": avg_loss,
-            "log": tensorboard_logs
-        }
-
-        return results
+        # Log to tensorboard
+        self.log("train_loss", avg_loss)
+        self.log("train_acc", avg_acc)
+        self.log("train_auc", auc)
+        self.log("epoch_duration", total_time)
+        self.log("step", self.current_epoch)
 
     def validation_step(self, batch, batch_id):
         return self.training_step(batch, batch_id)
 
     def validation_epoch_end(self, outputs):
         # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
+        labels = np.concatenate([batch["labels"].detach().cpu().numpy() for batch in outputs])
+        predictions = np.concatenate([batch["predictions"].detach().cpu().numpy() for batch in outputs])
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
         # Get epoch average metrics
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
         avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
-
-        # Progress bar log
-        progress_bar = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc
-        }
-
-        # Tensorboard log
-        tensorboard_logs = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Define return
-        results = {
-            "val_loss": avg_loss,
-            "log": tensorboard_logs,
-            "progress_bar": progress_bar
-        }
+        
+        # Log to tensorboard and prog_bar
+        self.log("val_loss", avg_loss, prog_bar=True)
+        self.log("val_acc", avg_acc, prog_bar=True)
+        self.log("val_auc", auc, prog_bar=True)
 
         # Save best model
         self.avg_acc.append(avg_acc)
@@ -179,5 +151,3 @@ class RetinaVVS(pl.LightningModule):
                 file.write(f"\nAccuracy: {avg_acc}\n")
                 file.write(f"ROC AUC: {auc}\n")
             file.close()
-
-        return results
