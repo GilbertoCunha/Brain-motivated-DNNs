@@ -75,15 +75,20 @@ class RetinaVVSGraph(pl.LightningModule):
         # VVS_Net
         self.vvs_conv = nn.ModuleList()
         self.vvs_bn = nn.ModuleList()
-        self.vvs_1x1 = {}
+        self.vvs_1x1 = nn.ModuleDict()
         for key in self.graph:
             if key != "out":
                 num_channels = self.graph[key][0]
                 self.vvs_conv.append(nn.Conv2d(in_channels=num_channels, out_channels=num_channels, kernel_size=9))
                 self.vvs_bn.append(nn.BatchNorm2d(num_features=num_channels))
-                for value in self.vvs_graph[key]:
-                    self.vvs_1x1[key,str(value)] = nn.Conv2d(in_channels=num_channels, out_channels=num_channels, kernel_size=1)
+        
+        for key in self.vvs_graph:
+            for value in self.vvs_graph[key]:
+                self.vvs_1x1[f"{key},{value}"] = nn.Conv2d(in_channels=ret_channels, out_channels=ret_channels, kernel_size=1)
         features = self.graph["out"][0] * input_shape[1] * input_shape[2]
+        
+        print(self.vvs_1x1)
+        print(self.graph)
         
         # NOTE: This neural network might need more complexity and
         # layers due to the huge ammount of input_features
@@ -109,10 +114,7 @@ class RetinaVVSGraph(pl.LightningModule):
             # because of the zip function and different argument len
             t_list = [t_layer_out[j] for j in self.graph[key][1]]
             for j in self.graph[key][1]:
-                print("\n")
-                print((str(j),key) in self.vvs_1x1)
-                print("\n")
-                t_list.append(self.vvs_1x1[str(j),key](t_layer_out[j]))
+                t_list.append(self.vvs_1x1[f"{j},{key}"](t_layer_out[j]))
             t = torch.cat(t_list, dim=1)
             t = self.pad(bn(F.relu(conv(t))))
             t_layer_out.append(t)
