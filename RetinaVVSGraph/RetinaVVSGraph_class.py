@@ -6,6 +6,7 @@ import torch.nn as nn
 import numpy as np
 import torch
 import time
+import json
 
 
 def channels_graph(g, r_c):
@@ -48,6 +49,7 @@ def channels_graph(g, r_c):
 
 class RetinaVVSGraph(pl.LightningModule):
     def __init__(self, hparams):
+        self.hparams = hparams
         super(RetinaVVSGraph, self).__init__()
         self.avg_acc = []
 
@@ -198,10 +200,6 @@ class RetinaVVSGraph(pl.LightningModule):
         if avg_acc >= max(self.avg_acc):
             Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
             torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
-            file = open(f"Best_Models/{self.filename}/{self.name}/graph.txt", "w")
-            file.write(f"Retina Channels: {self.ret_channels}")
-            file.write(f"Dropout: {self.dropout}")
-            file.write(f"Graph: {self.vvs_graph}")
-            file.write(f"\nAccuracy: {avg_acc}")
-            file.write(f"ROC AUC: {auc}")
-            file.close()
+            
+            with open(f"Best_Models/{self.filename}/{self.name}/graph.txt", "w") as file:
+                json.dump(self.hparams, file)

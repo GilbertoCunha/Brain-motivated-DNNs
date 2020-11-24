@@ -49,14 +49,13 @@ class SIFTRetinaStart(RetinaVVS):
     def forward(self, tensor):
         batch_size = tensor.shape[0]
 
-        # Apply sift
-        # MODIFICAR A ENTRADA DA SIFT PARA DEPOIS DA CAMADA RETINA
-        sift_t = self.sift(tensor).reshape(batch_size, -1)
-        sift_t = self.dropout(F.relu(self.sift_fc(sift_t)))
-
         # Retina forward pass
         t = self.pad(self.ret_bn1(F.relu(self.inputs(tensor))))
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
+        
+        # Apply sift after retina
+        sift_t = self.sift(tensor).reshape(batch_size, -1)
+        sift_t = self.dropout(F.relu(self.sift_fc(sift_t)))
 
         # VVS forward pass
         for conv, bn in zip(self.vvs_conv, self.vvs_bn):
@@ -127,12 +126,13 @@ class SIFTBoth(RetinaVVS):
         # Retina forward pass
         t = self.pad(self.ret_bn1(F.relu(self.inputs(tensor))))
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
+        t_ = t
 
         # VVS forward pass
         for conv, bn in zip(self.vvs_conv, self.vvs_bn):
             t = self.pad(bn(F.relu(conv(t))))
         t = self.sift(t).reshape(batch_size, -1)
-        t = torch.cat((t.reshape(batch_size, -1), self.sift(tensor).reshape(batch_size, -1)), dim=-1)
+        t = torch.cat((t.reshape(batch_size, -1), self.sift(t_).reshape(batch_size, -1)), dim=-1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
 

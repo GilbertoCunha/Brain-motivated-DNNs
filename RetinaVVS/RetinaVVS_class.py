@@ -6,10 +6,12 @@ import torch.nn as nn
 import numpy as np
 import torch
 import time
+import json
 
 
 class RetinaVVS(pl.LightningModule):
     def __init__(self, hparams):
+        self.hparams = hparams
         super(RetinaVVS, self).__init__()
         self.avg_acc = []
 
@@ -137,17 +139,8 @@ class RetinaVVS(pl.LightningModule):
         if avg_acc >= max(self.avg_acc):
             Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
             torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
-            file = open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w")
-            if self.filename == "RetinaVVS" or "SIFT" in self.filename:
-                file.write(f"Retina Channels: {self.ret_channels}\n")
-                file.write(f"VVS Layers: {self.vvs_layers}\n")
-                file.write(f"Dropout: {self.drop}\n")
-                if "SIFT" in self.filename:
-                    file.write(f"Patch Size: {self.patch_size}\n")
-                if "LBP" in self.filename:
-                    file.write(f"Out Channels: {self.out_channels}")
-                    file.write(f"Kernel Size: {self.kernel_size}")
-                    file.write(f"Sparsity: {self.sparsity}")
-                file.write(f"\nAccuracy: {avg_acc}\n")
-                file.write(f"ROC AUC: {auc}\n")
+            
+            with open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w") as file:
+                json.dump(self.hparams, file)
+                
             file.close()

@@ -18,7 +18,7 @@ if __name__ == "__main__":
     parser.set_defaults(fast_dev_run=False)
     parser.add_argument("--model_class", type=str, default="SIFTRetinaStart")
     parser.add_argument("--es_patience", type=int, default=3)
-    parser.add_argument("--gpus", type=int, default=1)
+    parser.add_argument("--gpus", type=int, default=0)
     args = parser.parse_args()
 
     # Model hyperparameters
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     tb_logger = pl_loggers.TensorBoardLogger(f"SIFT/logs/{model.filename}", name=model.name)
 
     # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, early_stop_callback=early_stop,
+    trainer = pl.Trainer.from_argparse_args(args, callbacks=[early_stop],
                                             deterministic=True, logger=tb_logger,
                                             default_root_dir="Models/")
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)
