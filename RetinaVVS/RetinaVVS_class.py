@@ -1,6 +1,7 @@
 from sklearn.metrics import roc_auc_score
-import pytorch_lightning as pl
 import torch.nn.functional as F
+import pytorch_lightning as pl
+from pathlib import Path
 import torch.nn as nn
 import numpy as np
 import torch
@@ -10,12 +11,16 @@ import time
 class RetinaVVS(pl.LightningModule):
     def __init__(self, hparams):
         super(RetinaVVS, self).__init__()
+        self.avg_acc = []
 
         # Gather hparams
         input_shape = hparams["input_shape"]
         ret_channels = hparams["ret_channels"]
         vvs_layers = hparams["vvs_layers"]
         dropout = hparams["dropout"]
+        self.ret_channels = ret_channels
+        self.vvs_layers = vvs_layers
+        self.drop = dropout
 
         # Model Parameters
         self.lr = hparams["lr"]
@@ -97,62 +102,52 @@ class RetinaVVS(pl.LightningModule):
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
 
         # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
+        labels = np.concatenate([batch["labels"].detach().cpu().numpy() for batch in outputs])
+        predictions = np.concatenate([batch["predictions"].detach().cpu().numpy() for batch in outputs])
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
-        # Tensorboard log
-        tensorboard_logs = {
-            "train_loss": avg_loss,
-            "train_acc": avg_acc,
-            "train_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Get returns
-        results = {
-            "train_loss": avg_loss,
-            "log": tensorboard_logs
-        }
-
-        return results
+        # Log to tensorboard
+        self.log("train_loss", avg_loss)
+        self.log("train_acc", avg_acc)
+        self.log("train_auc", auc)
+        self.log("epoch_duration", total_time)
+        self.log("step", self.current_epoch)
 
     def validation_step(self, batch, batch_id):
         return self.training_step(batch, batch_id)
 
     def validation_epoch_end(self, outputs):
         # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
+        labels = np.concatenate([batch["labels"].detach().cpu().numpy() for batch in outputs])
+        predictions = np.concatenate([batch["predictions"].detach().cpu().numpy() for batch in outputs])
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
         # Get epoch average metrics
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
         avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
+        
+        # Log to tensorboard and prog_bar
+        self.log("val_loss", avg_loss, prog_bar=True)
+        self.log("val_acc", avg_acc, prog_bar=True)
+        self.log("val_auc", auc, prog_bar=True)
 
-        # Progress bar log
-        progress_bar = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc
-        }
-
-        # Tensorboard log
-        tensorboard_logs = {
-            "val_loss": avg_loss,
-            "val_acc": avg_acc,
-            "val_auc": auc,
-            "epoch_duration": total_time,
-            "step": self.current_epoch
-        }
-
-        # Define return
-        results = {
-            "val_loss": avg_loss,
-            "log": tensorboard_logs,
-            "progress_bar": progress_bar
-        }
-
-        return results
+        # Save best model
+        self.avg_acc.append(avg_acc)
+        if avg_acc >= max(self.avg_acc):
+            Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
+            torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
+            file = open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w")
+            if self.filename == "RetinaVVS" or "SIFT" in self.filename:
+                file.write(f"Retina Channels: {self.ret_channels}\n")
+                file.write(f"VVS Layers: {self.vvs_layers}\n")
+                file.write(f"Dropout: {self.drop}\n")
+                if "SIFT" in self.filename:
+                    file.write(f"Patch Size: {self.patch_size}\n")
+                if "LBP" in self.filename:
+                    file.write(f"Out Channels: {self.out_channels}")
+                    file.write(f"Kernel Size: {self.kernel_size}")
+                    file.write(f"Sparsity: {self.sparsity}")
+                file.write(f"\nAccuracy: {avg_acc}\n")
+                file.write(f"ROC AUC: {auc}\n")
+            file.close()

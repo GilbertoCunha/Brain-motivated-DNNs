@@ -29,6 +29,9 @@ class LBPRetinaStart(RetinaVVS):
         out_channels = hparams["out_channels"]
         kernel_size = hparams["kernel_size"]
         sparsity = hparams["sparsity"]
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.sparsity = sparsity
 
         # Model identifiers
         self.name += f"_OutChans{out_channels}_Kernel{kernel_size}_Spars{sparsity}"
@@ -63,7 +66,6 @@ class LBPVVSEnd(RetinaVVS):
         super(LBPVVSEnd, self).__init__(hparams)
 
         # Gather hparams
-        input_shape = hparams["input_shape"]
         out_channels = hparams["out_channels"]
         kernel_size = hparams["kernel_size"]
         sparsity = hparams["sparsity"]
@@ -99,7 +101,6 @@ class LBPBoth(RetinaVVS):
         super(LBPBoth, self).__init__(hparams)
 
         # Gather hparams
-        input_shape = hparams["input_shape"]
         out_channels = hparams["out_channels"]
         kernel_size = hparams["kernel_size"]
         sparsity = hparams["sparsity"]
