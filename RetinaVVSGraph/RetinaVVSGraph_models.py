@@ -1,6 +1,6 @@
+import RetinaVVSGraph.RetinaVVSGraph_class as RetinaVVSG
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import loggers as pl_loggers
-import RetinaVVSGraph.RetinaVVSGraph_class as RetinaVVSG
 from torchvision.datasets import CIFAR10
 from argparse import ArgumentParser
 from torchvision import transforms
@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument('--fast_dev_run', dest='fast_dev_run', action='store_true')
     parser.set_defaults(fast_dev_run=False)
     parser.add_argument("--es_patience", type=int, default=3)
-    parser.add_argument("--gpus", type=int, default=1)
+    parser.add_argument("--gpus", type=int, default=0)
     args = parser.parse_args()
 
     # VVS Network graph
