@@ -45,22 +45,23 @@ class AttentionBlock(pl.LightningModule):
 class AMRetinaStart(RetinaVVS):
     def __init__(self, hparams):
         super(AMRetinaStart, self).__init__(hparams)
-        self.spacial_attention = SpacialAttention(self.ret_channels)
-        self.channel_attention = ChannelAttention(self.ret_channels)
+        self.filename = "AMRetinaStart"
+        self.attention = AttentionBlock(self.ret_channels, hparams["input_shape"][1])
 
     def forward(self, tensor):
+        batch_size = tensor.shape[0]
+        
         # Retina forward pass
         t = self.pad(self.ret_bn1(F.relu(self.inputs(tensor))))
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
         
         # Apply spacial and channel attention
-        channel_weights = self.channel_attention(t)
-        pixel_weights = self.spacial_attention(t)
-        t = t * channel_weights * pixel_weights
+        t = self.attention(t)
 
         # VVS forward pass
         for conv, bn in zip(self.vvs_conv, self.vvs_bn):
             t = self.pad(bn(F.relu(conv(t))))
+        t = t.reshape(batch_size, -1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
 
