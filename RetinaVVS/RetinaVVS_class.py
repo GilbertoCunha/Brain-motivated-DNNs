@@ -1,4 +1,5 @@
 from sklearn.metrics import roc_auc_score
+import SIFT.SIFT_classes as SIFT_classes
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from pathlib import Path
@@ -109,6 +110,13 @@ class RetinaVVS(pl.LightningModule):
         auc = roc_auc_score(labels, predictions, multi_class="ovr")
 
         # Log to tensorboard
+        if(self.current_epoch==1):
+            if "SIFT" in self.hparams["model_class"]:
+                model = getattr(SIFT_classes, self.hparams["model_class"])(self.hparams)
+            else:
+                model = RetinaVVS()
+            sampleImg=torch.rand((1,1,28,28))
+            self.logger.experiment.add_graph(model(),sampleImg)
         self.log("train_loss", avg_loss)
         self.log("train_acc", avg_acc)
         self.log("train_auc", auc)
