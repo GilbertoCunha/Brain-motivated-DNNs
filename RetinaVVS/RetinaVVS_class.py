@@ -117,11 +117,11 @@ class RetinaVVS(pl.LightningModule):
             auc = roc_auc_score(labels, predictions, multi_class="ovr")
             self.log("train_auc", auc)
         else:
+            # Log graph to tensorboard
             if "SIFT" in self.hparams["model_class"]:
                 model = getattr(SIFT_classes, self.hparams["model_class"])(self.hparams)
             else:
                 model = RetinaVVS()
-            # Log graph to tensorboard
             sampleImg=torch.rand((1, 1, 32, 32))
             self.logger.experiment.add_graph(model, sampleImg)
 
@@ -132,12 +132,10 @@ class RetinaVVS(pl.LightningModule):
         # Get epoch average metrics
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
         avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
-        total_time = np.stack([batch["time"] for batch in outputs]).sum()
         
         # Log to tensorboard and prog_bar
         self.log("val_loss", avg_loss, prog_bar=True)
         self.log("val_acc", avg_acc, prog_bar=True)
-        self.log("total_time", total_time)
 
         if self.current_epoch != 0:
             # Get ROC_AUC
@@ -150,9 +148,15 @@ class RetinaVVS(pl.LightningModule):
             self.avg_acc.append(avg_acc)
             if avg_acc >= max(self.avg_acc):
                 Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
+                
+                # Write metrics to file
+                with open(f"Best_Models/{self.filename}/{self.name}/metrics.txt", "w") as file:
+                    file.write(f"Accuracy: {avg_acc}\n")
+                    file.write(f"AUC: {auc}")
+                
+                # Save model parameters
                 torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
                 
+                # Save model hyperparameters
                 with open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w") as file:
                     json.dump(self.hparams, file)
-                    
-                file.close()

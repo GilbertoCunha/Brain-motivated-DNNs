@@ -167,43 +167,57 @@ class RetinaVVSGraph(pl.LightningModule):
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
         avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
         total_time = np.stack([batch["time"] for batch in outputs]).sum()
-
-        # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
-        auc = roc_auc_score(labels, predictions, multi_class="ovr")
         
         # Log to tensorboard
         self.log("train_loss", avg_loss)
         self.log("train_acc", avg_acc)
-        self.log("train_auc", auc)
         self.log("epoch_duration", total_time)
         self.log("step", self.current_epoch)
+        
+        if self.current_epoch != 0:
+            # Get ROC_AUC
+            labels = np.concatenate([batch["labels"].detach().cpu().numpy() for batch in outputs])
+            predictions = np.concatenate([batch["predictions"].detach().cpu().numpy() for batch in outputs])
+            auc = roc_auc_score(labels, predictions, multi_class="ovr")
+            self.log("train_auc", auc)
+        else:
+            # Log graph to tensorboard
+            model = RetinaVVSGraph(self.hparams)
+            sampleImg=torch.rand((1, 1, 32, 32))
+            self.logger.experiment.add_graph(model, sampleImg)
 
     def validation_step(self, batch, batch_id):
         return self.training_step(batch, batch_id)
 
     def validation_epoch_end(self, outputs):
-        # Get ROC_AUC
-        labels = np.concatenate([batch["labels"].cpu().numpy() for batch in outputs])
-        predictions = np.concatenate([batch["predictions"].cpu().numpy() for batch in outputs])
-        auc = roc_auc_score(labels, predictions, multi_class="ovr")
-
         # Get epoch average metrics
         avg_loss = torch.stack([batch["loss"] for batch in outputs]).mean()
         avg_acc = torch.stack([batch["acc"] for batch in outputs]).mean()
-        total_time = np.stack([batch["time"] for batch in outputs]).sum()
         
         # Log to tensorboard and prog_bar
         self.log("val_loss", avg_loss, prog_bar=True)
         self.log("val_acc", avg_acc, prog_bar=True)
-        self.log("val_auc", auc, prog_bar=True)
 
-        # Save models with more than 69% performance
-        self.avg_acc.append(avg_acc)
-        if avg_acc >= max(self.avg_acc):
-            Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
-            torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
+        if self.current_epoch != 0:
+            # Get ROC_AUC
+            labels = np.concatenate([batch["labels"].detach().cpu().numpy() for batch in outputs])
+            predictions = np.concatenate([batch["predictions"].detach().cpu().numpy() for batch in outputs])
+            auc = roc_auc_score(labels, predictions, multi_class="ovr")
+            self.log("val_auc", auc, prog_bar=True)
             
-            with open(f"Best_Models/{self.filename}/{self.name}/graph.txt", "w") as file:
-                json.dump(self.hparams, file)
+            # Save best model
+            self.avg_acc.append(avg_acc)
+            if avg_acc >= max(self.avg_acc):
+                Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
+                
+                # Write metrics to file
+                with open(f"Best_Models/{self.filename}/{self.name}/metrics.txt", "w") as file:
+                    file.write(f"Accuracy: {avg_acc}\n")
+                    file.write(f"AUC: {auc}")
+                
+                # Save model parameters
+                torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
+                
+                # Save model hyperparameters
+                with open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w") as file:
+                    json.dump(self.hparams, file)

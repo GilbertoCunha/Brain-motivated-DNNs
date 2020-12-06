@@ -18,7 +18,7 @@ if __name__ == "__main__":
     parser.set_defaults(fast_dev_run=False)
     parser.add_argument("--model_class", type=str, default="SIFTRetinaStart")
     parser.add_argument("--es_patience", type=int, default=3)
-    parser.add_argument("--gpus", type=int, default=0)
+    parser.add_argument("--gpus", type=int, default=1)
     args = parser.parse_args()
 
     # Model hyperparameters
