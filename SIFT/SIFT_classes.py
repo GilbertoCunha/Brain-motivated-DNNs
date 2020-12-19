@@ -1,5 +1,5 @@
+import RetinaVVS.RetinaVVS_class as RetinaVVS_class
 from kornia.feature.siftdesc import SIFTDescriptor
-from RetinaVVS.RetinaVVS_class import RetinaVVS
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
@@ -26,7 +26,7 @@ class SIFT(nn.Module):
         return outputs
     
     
-class SIFTRetinaStart(RetinaVVS):
+class SIFTRetinaStart(RetinaVVS_class.RetinaVVS):
     def __init__(self, hparams):
         super(SIFTRetinaStart, self).__init__(hparams)
 
@@ -64,7 +64,7 @@ class SIFTRetinaStart(RetinaVVS):
         return t
 
 
-class SIFTVVSEnd(RetinaVVS):
+class SIFTVVSEnd(RetinaVVS_class.RetinaVVS):
     def __init__(self, hparams):
         super(SIFTVVSEnd, self).__init__(hparams)
 
@@ -107,7 +107,7 @@ class SIFTVVSEnd(RetinaVVS):
         return t
 
 
-class SIFTBoth(RetinaVVS):
+class SIFTBoth(RetinaVVS_class.RetinaVVS):
     def __init__(self, hparams):
         super(SIFTBoth, self).__init__(hparams)
 
