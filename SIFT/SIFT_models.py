@@ -55,10 +55,19 @@ if __name__ == "__main__":
         patience=args.es_patience,
         mode="min"
     )
+    checkpoints = pl.callbacks.ModelCheckpoint(
+        dirpath=f"Best_Models/{model.filename}",
+        filename="weights",
+        monitor="val_acc",
+        save_top_k=1,
+        mode="max"
+    )
+    
+    # Tensorboard Logger
     tb_logger = pl_loggers.TensorBoardLogger(f"SIFT/logs/{model.filename}", name=model.name)
 
     # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, callbacks=[early_stop],
+    trainer = pl.Trainer.from_argparse_args(args, callbacks=[early_stop, checkpoints],
                                             deterministic=True, logger=tb_logger,
                                             default_root_dir="Models/")
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)

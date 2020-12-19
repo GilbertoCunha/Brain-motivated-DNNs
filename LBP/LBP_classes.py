@@ -34,6 +34,7 @@ class LBPRetinaStart(RetinaVVS):
         self.sparsity = sparsity
 
         # Model identifiers
+        self.filename = "LBPRetinaStart"
         self.name += f"_OutChans{out_channels}_Kernel{kernel_size}_Spars{sparsity}"
 
         # Modify model parameters
@@ -71,6 +72,7 @@ class LBPVVSEnd(RetinaVVS):
         sparsity = hparams["sparsity"]
 
         # Model identifiers
+        self.filename = "LBPVVSEnd"
         self.name += f"_OutChans{out_channels}_Kernel{kernel_size}_Spars{sparsity}"
 
         # Change model parameters
@@ -106,6 +108,7 @@ class LBPBoth(RetinaVVS):
         sparsity = hparams["sparsity"]
 
         # Model Parameters
+        self.filename = "LBPBoth"
         self.name += f"_OutChans{out_channels}_Kernel{kernel_size}_Spars{sparsity}"
 
         # Modify model parameters

@@ -33,16 +33,18 @@ class SIFTRetinaStart(RetinaVVS_class.RetinaVVS):
         # Gather hparams
         input_shape = hparams["input_shape"]
         patch_size = hparams["patch_size"]
+        ret_channels = hparams["ret_channels"]
         self.patch_size = patch_size
 
         # Model identifiers
+        self.filename = "SIFTRetinaStart"
         self.name += f"_PatchSize{patch_size}"
 
         # Modify model parameters
-        vvs_features = self.ret_channels * input_shape[1] * input_shape[2]
+        vvs_features = ret_channels * input_shape[1] * input_shape[2]
         self.vvs_fc = nn.Linear(in_features=vvs_features, out_features=1024)
         self.sift = SIFT(patch_size=patch_size)
-        self.vvs_conv[0] = nn.Conv2d(in_channels= 2 * self.ret_channels, out_channels=32, kernel_size=9)
+        self.vvs_conv[0] = nn.Conv2d(in_channels= 2 * ret_channels, out_channels=32, kernel_size=9)
 
     def forward(self, tensor):
         batch_size, height, width = tensor.shape[0], tensor.shape[-1], tensor.shape[-2]
@@ -69,17 +71,19 @@ class SIFTVVSEnd(RetinaVVS_class.RetinaVVS):
         super(SIFTVVSEnd, self).__init__(hparams)
 
         # Gather hparams
+        ret_channels = hparams["ret_channels"]
         input_shape = hparams["input_shape"]
         patch_size = hparams["patch_size"]
         self.patch_size = patch_size
 
         # Model identifiers
+        self.filename = "SIFTVVSEnd"
         self.name += f"_PatchSize{patch_size}"
 
         # Modify model parameters
         # features = 32 * input_shape[1] * input_shape[2] + 128 * input_shape[0] * int(input_shape[1] / patch_size) ** 2
         vvs_features = 32 * input_shape[1] * input_shape[2]
-        features = 128 * self.ret_channels * int(input_shape[1] / patch_size) ** 2
+        features = 128 * ret_channels * int(input_shape[1] / patch_size) ** 2
         self.sift_fc = nn.Linear(in_features=features, out_features=features//64)
         self.vvs_fc = nn.Linear(in_features=vvs_features+features//64, out_features=1024)
         self.sift = SIFT(patch_size=patch_size)
@@ -117,6 +121,7 @@ class SIFTBoth(RetinaVVS_class.RetinaVVS):
         self.patch_size = patch_size
 
         # Model Parameters
+        self.filename = "SIFTBoth"
         self.name += f"_PatchSize{patch_size}"
 
         # Modify model parameters

@@ -22,11 +22,9 @@ if __name__ == "__main__":
 
     # Model hyperparameters
     hparams = {
-        'batch_size': 32,
         'ret_channels': 32,
         'vvs_layers': 4,
         'dropout': 0.05,
-        'model_class': "RetinaVVS",
         'lr': 1e-3
     }
 
@@ -40,12 +38,12 @@ if __name__ == "__main__":
     val_size = int(0.2 * len(train_data))
     train_size = len(train_data) - val_size
     train_data, val_data = random_split(train_data, [train_size, val_size])
-    train_data = DataLoader(train_data, batch_size=hparams["batch_size"], shuffle=True, num_workers=12)
-    val_data = DataLoader(val_data, batch_size=hparams["batch_size"], num_workers=12)
+    train_data = DataLoader(train_data, batch_size=32, shuffle=True, num_workers=12)
+    val_data = DataLoader(val_data, batch_size=32, num_workers=12)
 
     # Create model
     hparams["input_shape"] = input_shape
-    model = getattr(RetinaVVS_class, hparams["model_class"])(hparams)
+    model = RetinaVVS_class.RetinaVVS(hparams)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -53,10 +51,19 @@ if __name__ == "__main__":
         patience=args.es_patience,
         mode="min"
     )
+    checkpoints = pl.callbacks.ModelCheckpoint(
+        dirpath=f"Best_Models/{model.filename}",
+        filename="weights",
+        monitor="val_acc",
+        save_top_k=1,
+        mode="max"
+    )
+    
+    # Tensorboard Logger
     tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVS/logs/", name=model.name)
 
     # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, callbacks=[early_stop],
+    trainer = pl.Trainer.from_argparse_args(args, callbacks=[early_stop, checkpoints],
                                             deterministic=True, logger=tb_logger,
                                             default_root_dir="Models/")
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)

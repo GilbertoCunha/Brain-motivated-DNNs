@@ -39,7 +39,6 @@ if __name__ == "__main__":
         'ret_channels': 32,
         'dropout': 0.0,
         'vvs_graph': vvs_graph,
-        'model_class': "RetinaVVSGraph",
         'lr': 1e-3
     }
 
@@ -58,7 +57,7 @@ if __name__ == "__main__":
 
     # Create model
     hparams["input_shape"] = input_shape
-    model = getattr(RetinaVVSG, hparams["model_class"])(hparams)
+    model = RetinaVVSG.RetinaVVSGraph(hparams)
 
     # Callbacks
     early_stop = pl.callbacks.EarlyStopping(
@@ -66,10 +65,19 @@ if __name__ == "__main__":
         patience=args.es_patience,
         mode="min"
     )
+    checkpoints = pl.callbacks.ModelCheckpoint(
+        dirpath=f"Best_Models/{model.filename}",
+        filename="weights",
+        monitor="val_acc",
+        save_top_k=1,
+        mode="max"
+    )
+    
+    # Tensorboard Logger
     tb_logger = pl_loggers.TensorBoardLogger(f"RetinaVVSGraph/logs/", name=model.name)
 
     # Train the model
-    trainer = pl.Trainer.from_argparse_args(args, callbacks=[early_stop],
+    trainer = pl.Trainer.from_argparse_args(args, callbacks=[early_stop, checkpoints],
                                             deterministic=True, logger=tb_logger,
                                             default_root_dir="Models/")
     trainer.fit(model, train_dataloader=train_data, val_dataloaders=val_data)

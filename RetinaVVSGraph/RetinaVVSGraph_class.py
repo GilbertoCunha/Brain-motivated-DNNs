@@ -1,12 +1,10 @@
 from sklearn.metrics import roc_auc_score
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from pathlib import Path
 import torch.nn as nn
 import numpy as np
 import torch
 import time
-import json
 
 
 def channels_graph(g, r_c):
@@ -49,17 +47,16 @@ def channels_graph(g, r_c):
 
 class RetinaVVSGraph(pl.LightningModule):
     def __init__(self, hparams):
-        self.hparams = hparams
         super(RetinaVVSGraph, self).__init__()
-        self.avg_acc = []
 
         # Gather hparams
+        self.save_hyperparameters(hparams)
         input_shape = hparams["input_shape"]
         ret_channels = hparams["ret_channels"]
         vvs_graph = hparams["vvs_graph"]
         dropout = hparams["dropout"]
         self.lr = hparams["lr"]
-        self.filename = hparams["model_class"]
+        self.filename = "RetinaVVSGraph"
         self.vvs_graph = vvs_graph
         self.dropout = dropout
         self.ret_channels = ret_channels
@@ -197,27 +194,3 @@ class RetinaVVSGraph(pl.LightningModule):
         # Log to tensorboard and prog_bar
         self.log("val_loss", avg_loss, prog_bar=True)
         self.log("val_acc", avg_acc, prog_bar=True)
-
-        if self.current_epoch != 0:
-            # Get ROC_AUC
-            labels = np.concatenate([batch["labels"].detach().cpu().numpy() for batch in outputs])
-            predictions = np.concatenate([batch["predictions"].detach().cpu().numpy() for batch in outputs])
-            auc = roc_auc_score(labels, predictions, multi_class="ovr")
-            self.log("val_auc", auc, prog_bar=True)
-            
-            # Save best model
-            self.avg_acc.append(avg_acc)
-            if avg_acc >= max(self.avg_acc):
-                Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
-                
-                # Write metrics to file
-                with open(f"Best_Models/{self.filename}/{self.name}/metrics.txt", "w") as file:
-                    file.write(f"Accuracy: {avg_acc}\n")
-                    file.write(f"AUC: {auc}")
-                
-                # Save model parameters
-                torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
-                
-                # Save model hyperparameters
-                with open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w") as file:
-                    json.dump(self.hparams, file)

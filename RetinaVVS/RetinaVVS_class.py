@@ -1,32 +1,22 @@
 from sklearn.metrics import roc_auc_score
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from pathlib import Path
 import torch.nn as nn
 import numpy as np
 import torch
 import time
-import json
 
 
 class RetinaVVS(pl.LightningModule):
     def __init__(self, hparams):
-        self.hparams = hparams
         super(RetinaVVS, self).__init__()
-        self.avg_acc = []
-
-        # Gather hparams
-        input_shape = hparams["input_shape"]
-        ret_channels = hparams["ret_channels"]
-        vvs_layers = hparams["vvs_layers"]
-        dropout = hparams["dropout"]
-        self.ret_channels = ret_channels
-        self.vvs_layers = vvs_layers
-        self.drop = dropout
-
-        # Model Parameters
-        self.lr = hparams["lr"]
-        self.filename = hparams["model_class"]
+        
+        self.save_hyperparameters(hparams)
+        ret_channels = self.hparams["ret_channels"]
+        vvs_layers = self.hparams["vvs_layers"]
+        input_shape = self.hparams["input_shape"]
+                
+        self.filename = "RetinaVVS"
         self.name = f"RetChans{ret_channels}_VVSLayers{vvs_layers}"
 
         # Retina Net
@@ -49,7 +39,7 @@ class RetinaVVS(pl.LightningModule):
 
         # Define Dropout, Padding
         self.pad = nn.ZeroPad2d(4)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(self.hparams["dropout"])
 
     def forward(self, tensor):
         batch_size = tensor.shape[0]
@@ -68,7 +58,7 @@ class RetinaVVS(pl.LightningModule):
         return t
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams["lr"])
         return optimizer
 
     @staticmethod
@@ -135,19 +125,3 @@ class RetinaVVS(pl.LightningModule):
             auc = roc_auc_score(labels, predictions, multi_class="ovr")
             self.log("val_auc", auc, prog_bar=True)
             
-            # Save best model
-            self.avg_acc.append(avg_acc)
-            if avg_acc >= max(self.avg_acc):
-                Path(f"Best_Models/{self.filename}/{self.name}").mkdir(parents=True, exist_ok=True)
-                
-                # Write metrics to file
-                with open(f"Best_Models/{self.filename}/{self.name}/metrics.txt", "w") as file:
-                    file.write(f"Accuracy: {avg_acc}\n")
-                    file.write(f"AUC: {auc}")
-                
-                # Save model parameters
-                torch.save(self.state_dict(), f"Best_Models/{self.filename}/{self.name}/weights.tar")
-                
-                # Save model hyperparameters
-                with open(f"Best_Models/{self.filename}/{self.name}/parameters.txt", "w") as file:
-                    json.dump(self.hparams, file)
