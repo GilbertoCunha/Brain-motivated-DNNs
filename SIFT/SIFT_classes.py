@@ -42,9 +42,11 @@ class SIFTRetinaStart(RetinaVVS_class.RetinaVVS):
 
         # Modify model parameters
         vvs_features = ret_channels * input_shape[1] * input_shape[2]
-        self.vvs_fc = nn.Linear(in_features=vvs_features, out_features=1024)
+        sift_features = 128 * ret_channels * int(input_shape[1] / patch_size) ** 2
+        self.vvs_fc = nn.Linear(in_features=vvs_features+sift_features, out_features=(vvs_features+sift_features)//50)
+        self.outputs = nn.Linear(in_features=(vvs_features+sift_features)//50, out_features=10)
         self.sift = SIFT(patch_size=patch_size)
-        self.vvs_conv[0] = nn.Conv2d(in_channels= 2 * ret_channels, out_channels=32, kernel_size=9)
+        self.vvs_conv[0] = nn.Conv2d(in_channels=ret_channels, out_channels=32, kernel_size=9)
 
     def forward(self, tensor):
         batch_size, height, width = tensor.shape[0], tensor.shape[-1], tensor.shape[-2]
@@ -54,12 +56,12 @@ class SIFTRetinaStart(RetinaVVS_class.RetinaVVS):
         t = self.pad(self.ret_bn2(F.relu(self.ret_conv(t))))
         
         # Apply sift after retina
-        t = self.sift(t).reshape(batch_size, -1, height, width)
+        t_sift = self.sift(t).reshape(batch_size, -1)
 
         # VVS forward pass
         for conv, bn in zip(self.vvs_conv, self.vvs_bn):
             t = self.pad(bn(F.relu(conv(t))))
-        t = t.reshape(batch_size, -1)
+        t = torch.cat((t.reshape(batch_size, -1), t_sift), dim=-1)
         t = self.dropout(F.relu(self.vvs_fc(t)))
         t = self.outputs(t)
 
